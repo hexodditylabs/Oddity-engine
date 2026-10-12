@@ -1,0 +1,15 @@
+[package]
+name = "oddity_icons"
+description = "Godot editor icons, @icons and Oddity brand icons, rendered from SVG at any size."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+resvg = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+# Faster builds for Oddity Engine.
+#
+# For quicker incremental builds during development, also run with
+#   cargo run -p oddity-editor --features dev
+# which turns on Bevy's dynamic linking.
+
+[target.x86_64-pc-windows-msvc]
+# LLVM's linker ships with Rust and is much faster than link.exe.
+linker = "rust-lld.exe"
+
+[target.x86_64-unknown-linux-gnu]
+# Uses LLD on Linux. Install `clang` and `lld` (or swap in `mold`).
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[alias]
+editor = "run -p oddity-editor --features dev"

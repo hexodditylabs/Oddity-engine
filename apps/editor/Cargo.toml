@@ -1,0 +1,25 @@
+[package]
+name = "oddity-editor"
+description = "The Oddity Engine editor."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "oddity-editor"
+path = "src/main.rs"
+
+[features]
+# Faster incremental builds while developing: `cargo editor`.
+dev = ["bevy/dynamic_linking"]
+
+[dependencies]
+bevy = { workspace = true }
+winit = { workspace = true }
+oddity_icons = { workspace = true }
+oddity_widgets = { workspace = true }
+
+[lints]
+workspace = true

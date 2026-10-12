@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+repository = "https://github.com/hexodditylabs/Oddity-engine"
+authors = ["Hex0ddity Labs"]
+publish = false
+
+[workspace.dependencies]
+# Bevy 0.20.0 is Oddity's seed: pinned exactly, and we do not follow upstream
+# releases. When we start changing engine internals, fork it into the repo
+# (e.g. `engine/bevy`) and point this at `path = "engine/bevy"`.
+bevy = { version = "=0.20.0", features = ["bevy_feathers"] }
+# Must match the winit version Bevy uses (needed for the window icon).
+winit = { version = "0.30", default-features = false }
+resvg = { version = "0.48", default-features = false }
+
+oddity_icons = { path = "crates/oddity_icons" }
+oddity_widgets = { path = "crates/oddity_widgets" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+
+# Bevy's recommended dev profile: our code builds fast, dependencies run fast.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
