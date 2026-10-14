@@ -152,12 +152,14 @@ the Oddity hot-pink accent; `ThemeConfig::godot()` gives Godot's stock blue.
 
 ## Roadmap
 
+The full roadmap, with diagrams, is in [roadmap/](roadmap/README.md).
+
 | Phase | What | Done when |
 | --- | --- | --- |
 | **0 · Foundations** ✓ | Workspace on Bevy 0.20, fast compiles, CI, icons, theme, fonts | Editor window opens and CI is green |
 | **1 · Core** ✓ | Command registry, undo/redo, selection, project file, headless mode | Commands run headless in tests, with undo |
-| **2 · Widgets and shell** ✓ | Docks, splits, tabs, tree view on top of Feathers | Four-dock layout looks like Godot's |
-| 3 · Editing | Hierarchy, inspector, viewport, gizmos, picking, levels, prefab mode, play | Make, save, reopen and play a level; edit a prefab in isolation |
+| **2 · Widgets and shell** ✓ | Godot 4.7 look; docks, splits, tree, filters; Hierarchy, Inspector, History, FileSystem | The layout looks like Godot's |
+| 3 · Editing | Editable inspector, 3D view, gizmos, picking, levels, prefab mode, scripts, play | Make, save, reopen and play a level; edit a prefab in isolation |
 | 4 · CLI, MCP, plugins | Editor CLI, MCP server, `EditorPlugin` API | An agent and a plugin both edit a scene |
 | 5 · Hub | Launch handoff, Hub CLI and UI, version manifest | Hub installs two versions and opens each project |
 
