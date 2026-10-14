@@ -31,7 +31,9 @@ fn take_screenshot(mut commands: Commands, path: Res<ScreenshotPath>, mut frame:
     commands
         .spawn(Screenshot::primary_window())
         .observe(save_to_disk(path.0.clone()))
-        .observe(|_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
-            exit.write(AppExit::Success);
-        });
+        .observe(
+            |_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
+                exit.write(AppExit::Success);
+            },
+        );
 }

@@ -93,6 +93,12 @@ impl ThemeConfig {
             flat_hover: shade(-1.2, 0.75),
             flat_pressed: shade(-2.0, 0.75),
 
+            // Measured from Godot 4.7: #494949 selected tree rows, #323232
+            // inspector categories, guide lines at 40% white.
+            item_selected: shade(-2.5, 0.75),
+            category: shade(-0.7, 0.9),
+            relationship_line: white.with_alpha(0.4).into(),
+
             font: white.with_alpha(0.75).into(),
             font_secondary: white.with_alpha(0.55).into(),
             font_hover: white.with_alpha(0.85).into(),
@@ -201,6 +207,9 @@ pub struct Palette {
     pub button_border: Color,
     pub flat_hover: Color,
     pub flat_pressed: Color,
+    pub item_selected: Color,
+    pub category: Color,
+    pub relationship_line: Color,
     pub font: Color,
     pub font_secondary: Color,
     pub font_hover: Color,
@@ -244,6 +253,8 @@ fn lerp(a: Srgba, b: Srgba, t: f32) -> Srgba {
 
 #[cfg(test)]
 mod tests {
+    use bevy::color::Mix;
+
     use super::*;
 
     fn hex(color: Color) -> String {
@@ -260,6 +271,34 @@ mod tests {
         assert!(v(p.surface_low) < v(p.surface_base));
         assert!(v(p.surface_base) < v(p.surface_high));
         assert!(v(p.button_normal) < v(p.button_hover));
+    }
+
+    /// Colours sampled from a Godot 4.7.2 editor screenshot (default theme).
+    /// Each must be reproduced within 2 steps per channel.
+    #[test]
+    fn matches_godot_4_7_screenshot() {
+        let p = ThemeConfig::godot().palette();
+        let near = |name: &str, colour: Color, expected: u32| {
+            let c = colour.to_srgba();
+            let got = [c.red, c.green, c.blue].map(|v| (v * 255.0).round() as i32);
+            let want = [expected >> 16, (expected >> 8) & 0xff, expected & 0xff].map(|v| v as i32);
+            assert!(
+                got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 2),
+                "{name}: got {got:?}, Godot has {want:?}"
+            );
+        };
+        near("window", p.surface_lowest, 0x141414);
+        near("panel", p.surface_base, 0x292929);
+        near("inset panel", p.surface_low, 0x1f1f1f);
+        near("field", p.dark_1, 0x1b1b1b);
+        near("toggled button", p.button_normal, 0x424242);
+        near("selected row", p.item_selected, 0x494949);
+        near("inspector category", p.category, 0x323232);
+        // Text is translucent white; Godot's #c9c9c9 is what it looks like on a panel.
+        let on_panel = p
+            .surface_base
+            .mix(&Color::WHITE.with_alpha(1.0), p.font.alpha());
+        near("text on a panel", on_panel, 0xc9c9c9);
     }
 
     #[test]

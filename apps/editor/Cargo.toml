@@ -18,8 +18,14 @@ dev = ["bevy/dynamic_linking"]
 [dependencies]
 bevy = { workspace = true }
 winit = { workspace = true }
+oddity_core = { workspace = true }
 oddity_icons = { workspace = true }
+oddity_project = { workspace = true }
 oddity_widgets = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

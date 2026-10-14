@@ -1,13 +1,13 @@
 //! The editor window's layout, after Godot 4: menu and main-screen bar on top,
-//! Scene dock left, viewport centre, Inspector right, FileSystem/Output bottom.
+//! Hierarchy dock left, viewport centre, Inspector right, FileSystem/Output bottom.
 //!
 //! Phase 0 only sketches the layout to prove the theme, fonts and icons work.
 //! Each dock becomes real in the phase that builds it.
 
 use bevy::{
     feathers::{
-        containers::{flex_spacer, pane, pane_body, pane_header},
-        controls::{ButtonVariant, FeathersButton, FeathersToolButton},
+        containers::{pane, pane_body, pane_header},
+        controls::{ButtonVariant, FeathersButton},
         display::caption,
         theme::{ThemeBackgroundColor, ThemeTextColor, ThemedText},
         tokens,
@@ -18,6 +18,9 @@ use bevy::{
 };
 use oddity_icons::{Icon, IconSet, NodeColor, UiIcon};
 use oddity_widgets::{brand, fonts::paths};
+
+use crate::{project::CurrentProject, title_bar::title_bar};
+use oddity_core::History;
 
 /// Godot's editor icon size.
 const ICON: f32 = 16.0;
@@ -33,69 +36,41 @@ fn root() -> impl Scene {
             width: percent(100),
             height: percent(100),
             flex_direction: FlexDirection::Column,
-            padding: px(4),
-            row_gap: px(4),
         }
         ThemeBackgroundColor(tokens::WINDOW_BG)
         Children [
-            @top_bar()
+            // Edge to edge, so the caption buttons sit in the window's corner.
+            @title_bar()
             --
             Node {
                 flex_grow: 1.0,
-                flex_direction: FlexDirection::Row,
-                column_gap: px(4),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect { left: px(4), right: px(4), bottom: px(4) },
+                row_gap: px(4),
                 min_height: px(0),
             }
             Children [
-                @dock("Scene", Icon::godot("PackedScene"), "Scene tree arrives in Phase 3.", 260.0)
+                Node {
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(4),
+                    min_height: px(0),
+                }
+                Children [
+                    @dock("Hierarchy", Icon::godot("Node"), "The level's node tree arrives in Phase 3.", 260.0)
+                    --
+                    @viewport()
+                    --
+                    @dock("Inspector", Icon::godot("Tools"), "Inspector arrives in Phase 3.", 300.0)
+                ]
                 --
-                @viewport()
-                --
-                @dock("Inspector", Icon::godot("Tools"), "Inspector arrives in Phase 3.", 300.0)
+                @bottom_panel()
             ]
-            --
-            @bottom_panel()
         ]
     }
 }
 
-/// Menus left, main screens centre, play controls right.
-fn top_bar() -> impl Scene {
-    bsn! {
-        Node {
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            column_gap: px(2),
-            padding: UiRect::horizontal(px(6)),
-            min_height: px(34),
-        }
-        Children [
-            UiIcon { icon: Icon::oddity_cat(), size: 20.0 }
-            Node { margin: UiRect::right(px(8)) }
-            --
-            @menu("Scene") -- @menu("Project") -- @menu("Debug") -- @menu("Editor") -- @menu("Help")
-            --
-            @flex_spacer()
-            --
-            @main_screen("2D", "2D") -- @main_screen("3D", "3D") -- @main_screen("Script", "Script") -- @main_screen("Game", "Game")
-            --
-            @flex_spacer()
-            --
-            @tool_icon("MainPlay") -- @tool_icon("Pause") -- @tool_icon("Stop") -- @tool_icon("PlayScene") -- @tool_icon("PlayCustom")
-        ]
-    }
-}
-
-fn menu(name: &'static str) -> impl Scene {
-    bsn! {
-        @FeathersButton {
-            @caption: bsn! { @caption(name) },
-            @variant: ButtonVariant::Plain,
-        }
-        on(move |_: On<Activate>| info!("{name} menu: not built yet"))
-    }
-}
-
+/// A 2D / 3D view switch button.
 fn main_screen(label: &'static str, icon: &'static str) -> impl Scene {
     bsn! {
         @FeathersButton {
@@ -107,17 +82,7 @@ fn main_screen(label: &'static str, icon: &'static str) -> impl Scene {
             },
             @variant: ButtonVariant::Plain,
         }
-        on(move |_: On<Activate>| info!("{label} screen: not built yet"))
-    }
-}
-
-fn tool_icon(icon: &'static str) -> impl Scene {
-    bsn! {
-        @FeathersToolButton {
-            @caption: bsn! { UiIcon { icon: Icon::godot(icon), size: ICON } },
-            @variant: ButtonVariant::Plain,
-        }
-        on(move |_: On<Activate>| info!("{icon}: not built yet"))
+        on(move |_: On<Activate>| info!("{label} view: arrives with the viewport (Phase 3)"))
     }
 }
 
@@ -157,6 +122,11 @@ fn viewport() -> impl Scene {
                     UiIcon { icon: Icon::godot("3D"), size: ICON }
                     --
                     @caption("Viewport")
+                ]
+                --
+                Node { column_gap: px(2), align_items: AlignItems::Center } ThemedText
+                Children [
+                    @main_screen("3D", "3D") -- @main_screen("2D", "2D")
                 ]
             ]
             --
@@ -265,10 +235,6 @@ fn icon_row() -> impl Scene {
 }
 
 fn bottom_panel() -> impl Scene {
-    let status = format!(
-        "Oddity Engine {}  ·  Phase 0: workspace, theme, fonts and icons are up.",
-        env!("CARGO_PKG_VERSION")
-    );
     bsn! {
         @pane()
         Node { height: px(150) }
@@ -294,7 +260,8 @@ fn bottom_panel() -> impl Scene {
             @pane_body()
             Node { flex_grow: 1.0 }
             Children [
-                Text(status)
+                Text("")
+                StatusLine
                 TextFont {
                     font: FontSourceTemplate::Handle(paths::MONO),
                     font_size: FontSize::Px(12.0),
@@ -313,5 +280,39 @@ fn dim_text(text: &'static str) -> impl Scene {
             font_size: FontSize::Px(13.0),
         }
         ThemeTextColor(tokens::TEXT_DIM)
+    }
+}
+
+/// The status text in the Output panel.
+#[derive(Component, Default, Clone)]
+pub struct StatusLine;
+
+/// Show the open project and the undo history in the Output panel.
+pub fn update_status_line(
+    history: Res<History>,
+    project: Res<CurrentProject>,
+    mut lines: Query<&mut Text, With<StatusLine>>,
+    added: Query<(), Added<StatusLine>>,
+) {
+    if !history.is_changed() && !project.is_changed() && added.is_empty() {
+        return;
+    }
+    let project = project
+        .name()
+        .unwrap_or("none (run: cargo editor -- path/to/game)");
+    let steps = history.undo_len();
+    let mut status = format!(
+        "Oddity Engine {}  ·  Project: {project}  ·  History: {steps} step{}",
+        env!("CARGO_PKG_VERSION"),
+        if steps == 1 { "" } else { "s" },
+    );
+    if let Some(label) = history.undo_label() {
+        status.push_str(&format!("  ·  Ctrl+Z: {label}"));
+    }
+    if history.is_dirty() {
+        status.push_str("  ·  unsaved changes");
+    }
+    for mut text in &mut lines {
+        text.0.clone_from(&status);
     }
 }

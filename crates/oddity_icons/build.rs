@@ -22,6 +22,10 @@ const SETS: &[Set] = &[
         ident: "BRAND",
         dir: "branding",
     },
+    Set {
+        ident: "UI",
+        dir: "crates/oddity_icons/ui",
+    },
 ];
 
 fn main() {

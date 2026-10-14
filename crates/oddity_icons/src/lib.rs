@@ -9,6 +9,8 @@
 //!   Names are snake_case, e.g. `"hammer"`, `"shield"`. They are drawn in
 //!   Godot's neutral colour and tinted per node type with [`NodeColor`].
 //! - [`IconSet::Brand`]: Oddity Engine and Hex0ddity Labs marks from `branding/`.
+//! - [`IconSet::Ui`]: Oddity's own small UI icons (title bar buttons) from
+//!   `crates/oddity_icons/ui/`, for things Godot's set does not cover.
 //!
 //! In UI, add a [`UiIcon`] component and the [`IconsPlugin`] does the rest:
 //!
@@ -50,17 +52,20 @@ pub enum IconSet {
     At,
     /// Oddity Engine branding, by file name (`"oddity-cat"`).
     Brand,
+    /// Oddity's own UI icons, by file name (`"window-close"`).
+    Ui,
 }
 
 impl IconSet {
     /// Every set, in a stable order.
-    pub const ALL: [IconSet; 3] = [IconSet::Godot, IconSet::At, IconSet::Brand];
+    pub const ALL: [IconSet; 4] = [IconSet::Godot, IconSet::At, IconSet::Brand, IconSet::Ui];
 
     fn table(self) -> &'static [(&'static str, &'static str)] {
         match self {
             IconSet::Godot => embedded::GODOT,
             IconSet::At => embedded::AT,
             IconSet::Brand => embedded::BRAND,
+            IconSet::Ui => embedded::UI,
         }
     }
 
@@ -105,17 +110,20 @@ pub enum NodeColor {
     Mesh,
     /// Animation (purple).
     Animation,
+    /// Folders in the FileSystem dock (Godot's folder blue).
+    Folder,
 }
 
 impl NodeColor {
     /// Every node colour, in a stable order.
-    pub const ALL: [NodeColor; 6] = [
+    pub const ALL: [NodeColor; 7] = [
         NodeColor::Node,
         NodeColor::Node2D,
         NodeColor::Node3D,
         NodeColor::Control,
         NodeColor::Mesh,
         NodeColor::Animation,
+        NodeColor::Folder,
     ];
 
     /// The colour as a lowercase `#rrggbb` string.
@@ -127,6 +135,8 @@ impl NodeColor {
             NodeColor::Control => "#8eef97",
             NodeColor::Mesh => "#ffca5f",
             NodeColor::Animation => "#c38ef1",
+            // Measured from Godot 4.7's FileSystem dock.
+            NodeColor::Folder => "#78a4e0",
         }
     }
 
@@ -176,6 +186,11 @@ impl Icon {
     /// A brand icon, e.g. `Icon::brand("oddity-cat")`.
     pub fn brand(name: impl Into<Cow<'static, str>>) -> Self {
         Self::new(IconSet::Brand, name)
+    }
+
+    /// One of Oddity's own UI icons, e.g. `Icon::ui("window-close")`.
+    pub fn ui(name: impl Into<Cow<'static, str>>) -> Self {
+        Self::new(IconSet::Ui, name)
     }
 
     /// The 15x15 wizard cat, for sizes below 128 px.
@@ -248,6 +263,7 @@ impl std::fmt::Display for Icon {
             IconSet::Godot => "godot",
             IconSet::At => "at",
             IconSet::Brand => "brand",
+            IconSet::Ui => "ui",
         };
         write!(f, "{set}:{}", self.name)?;
         if let Some(tint) = self.tint {
@@ -293,6 +309,14 @@ mod tests {
         assert!(Icon::oddity_cat_striped().exists());
         assert!(Icon::oddity_wordmark().exists());
         assert!(Icon::hex0ddity_mark().exists());
+        for name in [
+            "window-minimize",
+            "window-maximize",
+            "window-restore",
+            "window-close",
+        ] {
+            assert!(Icon::ui(name).exists(), "missing ui icon {name}");
+        }
         assert!(!Icon::godot("DefinitelyNotAnIcon").exists());
     }
 

@@ -15,11 +15,27 @@ publish = false
 # releases. When we start changing engine internals, fork it into the repo
 # (e.g. `engine/bevy`) and point this at `path = "engine/bevy"`.
 bevy = { version = "=0.20.0", features = ["bevy_feathers"] }
+# The headless core uses Bevy's sub-crates directly (same versions as `bevy`),
+# so it builds and tests without any rendering code.
+bevy_app = "=0.20.0"
+bevy_ecs = "=0.20.0"
+bevy_reflect = "=0.20.0"
 # Must match the winit version Bevy uses (needed for the window icon).
 winit = { version = "0.30", default-features = false }
 resvg = { version = "0.48", default-features = false }
 
+serde = { version = "1", features = ["derive"] }
+# preserve_order: components read back with their fields in declaration
+# order, so the Inspector lists Position, Rotation, Scale as Godot does.
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+toml = "0.9"
+tracing = "0.1"
+tempfile = "3"
+
+oddity_core = { path = "crates/oddity_core" }
 oddity_icons = { path = "crates/oddity_icons" }
+oddity_project = { path = "crates/oddity_project" }
 oddity_widgets = { path = "crates/oddity_widgets" }
 
 [workspace.lints.rust]

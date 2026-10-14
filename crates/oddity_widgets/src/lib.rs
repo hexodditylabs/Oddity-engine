@@ -2,14 +2,30 @@
 //!
 //! This is our take on `bevy_feathers`: Feathers' widgets and theming system,
 //! with Godot's editor palette ([`theme`]), the Oddity brand ([`brand`]) and
-//! the editor fonts ([`fonts`]). Godot-specific widgets (docks, tree view,
-//! inspector rows) will live here as the editor grows.
+//! the editor fonts ([`fonts`]), plus the editor-shaped widgets Feathers
+//! doesn't have:
+//!
+//! - [`button`]: flat icon buttons and toggles for toolbars
+//! - [`dock`]: tabbed docks and Godot's bottom panel
+//! - [`field`]: search fields with placeholder text
+//! - [`split`]: drag handles that resize docks
+//! - [`tree`]: the tree view behind the Hierarchy and FileSystem docks
+//! - [`hover`]: hover/press feedback for flat controls
+//!
+//! Widgets live here, not in the editor, so the Hub and editor plugins can
+//! use them too.
 //!
 //! Add [`OddityWidgetsPlugin`] after Bevy's `DefaultPlugins`.
 
 pub mod brand;
+pub mod button;
+pub mod dock;
+pub mod field;
 pub mod fonts;
+pub mod hover;
+pub mod split;
 pub mod theme;
+pub mod tree;
 
 use bevy::{
     feathers::{FeathersPlugins, theme::UiTheme},
@@ -42,6 +58,10 @@ impl Plugin for OddityWidgetsPlugin {
         if !app.is_plugin_added::<oddity_icons::IconsPlugin>() {
             app.add_plugins(oddity_icons::IconsPlugin);
         }
+        button::plugin(app);
+        dock::plugin(app);
+        field::plugin(app);
+        tree::plugin(app);
     }
 }
 
