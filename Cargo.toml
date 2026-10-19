@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/*"]
+members = ["crates/*", "apps/*", "tools/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,7 +14,9 @@ publish = false
 # Bevy 0.20.0 is Oddity's seed: pinned exactly, and we do not follow upstream
 # releases. When we start changing engine internals, fork it into the repo
 # (e.g. `engine/bevy`) and point this at `path = "engine/bevy"`.
-bevy = { version = "=0.20.0", features = ["bevy_feathers"] }
+# Editor UI crates add the `bevy_feathers` feature themselves, so games built
+# on the runtime crates don't carry the editor's widgets.
+bevy = "=0.20.0"
 # The headless core uses Bevy's sub-crates directly (same versions as `bevy`),
 # so it builds and tests without any rendering code.
 bevy_app = "=0.20.0"
@@ -29,13 +31,29 @@ serde = { version = "1", features = ["derive"] }
 # order, so the Inspector lists Position, Rotation, Scale as Godot does.
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
+# Asset IDs (`oddity_project::assets`); the same crate Bevy uses for its own.
+uuid = { version = "1", features = ["v4", "serde"] }
 toml = "0.9"
 tracing = "0.1"
 tempfile = "3"
+# For `#[script]` and the other scripting macros.
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+# The MCP SDK (task K6), and the async runtime it runs on.
+rmcp = { version = "3.5.1", default-features = false, features = ["server", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "io-std"] }
 
+oddity = { path = "crates/oddity" }
+oddity_build = { path = "crates/oddity_build" }
 oddity_core = { path = "crates/oddity_core" }
 oddity_icons = { path = "crates/oddity_icons" }
+oddity_level = { path = "crates/oddity_level" }
+oddity_mcp = { path = "crates/oddity_mcp" }
+oddity_plugin_api = { path = "crates/oddity_plugin_api" }
 oddity_project = { path = "crates/oddity_project" }
+oddity_script = { path = "crates/oddity_script" }
+oddity_script_macros = { path = "crates/oddity_script_macros" }
 oddity_widgets = { path = "crates/oddity_widgets" }
 
 [workspace.lints.rust]

@@ -30,7 +30,10 @@
 //! the nearest [`Dock`]. Switching tabs is done by clicking or by setting
 //! [`Dock::active`].
 
+use std::borrow::Cow;
+
 use bevy::{
+    ecs::{lifecycle::HookContext, world::DeferredWorld},
     picking::{Pickable, events::PointerClick, hover::Hovered, pointer::PointerButton},
     prelude::*,
     text::FontSourceTemplate,
@@ -84,13 +87,16 @@ pub struct DockPage(pub usize);
 /// What a tab shows. Build with [`tab`].
 #[derive(Clone, Debug)]
 pub struct TabSpec {
-    label: &'static str,
+    label: Cow<'static, str>,
     icon: Option<Icon>,
 }
 
 /// A tab with a text label. Godot's side docks use text only.
-pub fn tab(label: &'static str) -> TabSpec {
-    TabSpec { label, icon: None }
+pub fn tab(label: impl Into<Cow<'static, str>>) -> TabSpec {
+    TabSpec {
+        label: label.into(),
+        icon: None,
+    }
 }
 
 impl TabSpec {
@@ -177,14 +183,32 @@ fn dock_tab(index: usize, spec: TabSpec, height: f32, padding: f32) -> impl Scen
         Children [
             {icon}
             --
-            Text({spec.label})
+            Text({spec.label.into_owned()})
             TextFont {
                 font: FontSourceTemplate::Handle(paths::UI),
                 font_size: FontSize::Px(14.0),
             }
-            TextColor(Color::WHITE)
+            DockTabLabel
             Pickable::IGNORE
         ]
+    }
+}
+
+/// A tab's text. It starts in the palette's text colour; [`sync_docks`]
+/// then gives it the colour for the tab's state.
+#[derive(Component, Default, Clone, Debug)]
+#[component(on_add = paint_tab_label)]
+#[require(TextColor)]
+struct DockTabLabel;
+
+/// A scene can't read resources, so the palette colour is set when the
+/// label is added, before it is ever drawn.
+fn paint_tab_label(mut world: DeferredWorld, context: HookContext) {
+    let Some(colour) = world.get_resource::<ActivePalette>().map(|p| p.font) else {
+        return;
+    };
+    if let Some(mut text) = world.get_mut::<TextColor>(context.entity) {
+        text.0 = colour;
     }
 }
 
@@ -397,5 +421,20 @@ fn sync_docks(
         if node.border_radius != radius {
             node.border_radius = radius;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ThemeConfig;
+
+    #[test]
+    fn a_new_tab_label_uses_the_palette_colour() {
+        let palette = ThemeConfig::default().palette();
+        let mut world = World::new();
+        world.insert_resource(ActivePalette(palette));
+        let label = world.spawn((Text::new("Scene"), DockTabLabel)).id();
+        assert_eq!(world.get::<TextColor>(label).unwrap().0, palette.font);
     }
 }

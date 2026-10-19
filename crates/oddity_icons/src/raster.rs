@@ -14,27 +14,18 @@ pub struct RgbaImage {
 }
 
 /// Why an icon could not be rendered.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum IconError {
     /// No icon with this name in its set.
+    #[error("icon not found: {0}")]
     NotFound(String),
     /// The SVG could not be parsed.
+    #[error("invalid SVG: {0}")]
     Parse(usvg::Error),
     /// The requested size was zero or too large.
+    #[error("cannot render an icon at {0} px")]
     BadSize(u32),
 }
-
-impl std::fmt::Display for IconError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IconError::NotFound(icon) => write!(f, "icon not found: {icon}"),
-            IconError::Parse(e) => write!(f, "invalid SVG: {e}"),
-            IconError::BadSize(size) => write!(f, "cannot render an icon at {size} px"),
-        }
-    }
-}
-
-impl std::error::Error for IconError {}
 
 /// Largest size we will render, to catch unit mix-ups early.
 const MAX_SIZE: u32 = 4096;

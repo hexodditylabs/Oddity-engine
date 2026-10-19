@@ -1,0 +1,48 @@
+{
+  "format": "oddity-level",
+  "version": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Main",
+      "parent": null,
+      "kind": "Node3D",
+      "components": {
+        "bevy_transform::components::transform::Transform": {
+          "translation": [0.0, 0.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Player",
+      "parent": 1,
+      "kind": "Node3D"
+    },
+    {
+      "id": 3,
+      "name": "Enemies",
+      "parent": 1
+    },
+    {
+      "id": 4,
+      "name": "Goblin",
+      "parent": 3,
+      "components": {
+        "script:3c1d9a07": { "max": 100.0 },
+        "script:9e4b2f15": { "score": 10 }
+      }
+    },
+    {
+      "id": 5,
+      "name": "Orc",
+      "parent": 3,
+      "components": {
+        "script:3c1d9a07": { "max": 300.0 },
+        "script:9e4b2f15": { "score": 30 }
+      }
+    }
+  ]
+}

@@ -2,8 +2,8 @@
 
 use bevy::{
     asset::RenderAssetUsages,
-    image::Image,
-    platform::collections::HashMap,
+    image::{Image, TRANSPARENT_IMAGE_HANDLE},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     ui::ComputedUiRenderTargetInfo,
@@ -16,12 +16,27 @@ pub struct IconsPlugin;
 
 impl Plugin for IconsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<IconCache>().add_systems(
-            PostUpdate,
-            update_ui_icons.before(bevy::ui::UiSystems::Prepare),
-        );
+        app.init_resource::<IconCache>()
+            .configure_sets(
+                PostUpdate,
+                UiIconSystems.before(bevy::ui::UiSystems::Prepare),
+            )
+            .add_systems(
+                PostUpdate,
+                (update_ui_icons, evict_unused_icons)
+                    .chain()
+                    .in_set(UiIconSystems),
+            );
     }
 }
+
+/// The `PostUpdate` systems that render [`UiIcon`]s, before UI layout.
+///
+/// Systems that spawn or change `UiIcon`s in `PostUpdate` should run
+/// `.before(UiIconSystems)`, so the icons show from their first frame. Bevy
+/// applies the spawning system's commands in between on its own.
+#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct UiIconSystems;
 
 /// Shows an [`Icon`] in UI at a size in logical pixels.
 ///
@@ -55,6 +70,12 @@ impl UiIcon {
 struct Rendered(Icon, u32);
 
 /// Rendered icon images, keyed by icon and physical pixel size.
+///
+/// Entries live while some [`UiIcon`] shows them: whenever icons change or
+/// go away, entries no `UiIcon` uses any more are dropped, so a DPI or size
+/// change doesn't keep the old images around. Handles returned by
+/// [`IconCache::get`] keep their image alive for as long as the caller holds
+/// them; the cache only forgets it, and renders it again if asked.
 #[derive(Resource, Default)]
 pub struct IconCache {
     images: HashMap<(Icon, u32), (Handle<Image>, UVec2)>,
@@ -145,7 +166,13 @@ fn update_ui_icons(
         if rendered.is_some_and(|r| r.0 == ui_icon.icon && r.1 == size_px) {
             continue;
         }
+        commands
+            .entity(entity)
+            .insert(Rendered(ui_icon.icon.clone(), size_px));
         let Some((handle, pixels)) = cache.get_sized(&mut images, &ui_icon.icon, size_px) else {
+            // Show nothing rather than whatever icon was there before.
+            // (`Handle::default()` would be a white square.)
+            image_node.image = TRANSPARENT_IMAGE_HANDLE;
             node.width = Val::Px(ui_icon.size);
             node.height = Val::Px(ui_icon.size);
             continue;
@@ -155,8 +182,91 @@ fn update_ui_icons(
         node.width = Val::Px(logical.x);
         node.height = Val::Px(logical.y);
         image_node.image = handle;
-        commands
-            .entity(entity)
-            .insert(Rendered(ui_icon.icon.clone(), size_px));
+    }
+}
+
+/// Drops cached images no [`UiIcon`] shows any more. Only runs its sweep on
+/// frames where an icon was re-rendered or removed.
+fn evict_unused_icons(
+    mut cache: ResMut<IconCache>,
+    rendered: Query<&Rendered>,
+    changed: Query<(), Changed<Rendered>>,
+    mut removed: RemovedComponents<Rendered>,
+) {
+    let removed_any = removed.read().count() > 0;
+    if !removed_any && changed.is_empty() {
+        return;
+    }
+    let in_use: HashSet<(&Icon, u32)> = rendered.iter().map(|r| (&r.0, r.1)).collect();
+    cache
+        .images
+        .retain(|(icon, size), _| in_use.contains(&(icon, *size)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> App {
+        let mut app = App::new();
+        app.add_plugins(IconsPlugin)
+            .init_resource::<Assets<Image>>();
+        app
+    }
+
+    fn image_of(app: &App, entity: Entity) -> Handle<Image> {
+        app.world().get::<ImageNode>(entity).unwrap().image.clone()
+    }
+
+    #[test]
+    fn a_new_icon_shows_on_its_first_frame() {
+        let mut app = app();
+        let entity = app
+            .world_mut()
+            .spawn(UiIcon::new(Icon::godot("Node3D"), 16.0))
+            .id();
+        app.update();
+        assert_ne!(image_of(&app, entity), TRANSPARENT_IMAGE_HANDLE);
+    }
+
+    #[test]
+    fn a_missing_icon_clears_the_previous_image() {
+        let mut app = app();
+        let entity = app
+            .world_mut()
+            .spawn(UiIcon::new(Icon::godot("Node3D"), 16.0))
+            .id();
+        app.update();
+        app.world_mut().get_mut::<UiIcon>(entity).unwrap().icon =
+            Icon::godot("DefinitelyNotAnIcon");
+        app.update();
+        assert_eq!(image_of(&app, entity), TRANSPARENT_IMAGE_HANDLE);
+
+        // Switching back renders it again.
+        app.world_mut().get_mut::<UiIcon>(entity).unwrap().icon = Icon::godot("Node3D");
+        app.update();
+        assert_ne!(image_of(&app, entity), TRANSPARENT_IMAGE_HANDLE);
+    }
+
+    #[test]
+    fn the_cache_forgets_images_no_icon_uses() {
+        let mut app = app();
+        let entity = app
+            .world_mut()
+            .spawn(UiIcon::new(Icon::godot("Node3D"), 16.0))
+            .id();
+        app.world_mut()
+            .spawn(UiIcon::new(Icon::godot("Camera3D"), 16.0));
+        app.update();
+        assert_eq!(app.world().resource::<IconCache>().len(), 2);
+
+        // A new size replaces the old image rather than adding to it.
+        app.world_mut().get_mut::<UiIcon>(entity).unwrap().size = 32.0;
+        app.update();
+        assert_eq!(app.world().resource::<IconCache>().len(), 2);
+
+        app.world_mut().despawn(entity);
+        app.update();
+        assert_eq!(app.world().resource::<IconCache>().len(), 1);
     }
 }

@@ -1,0 +1,22 @@
+[package]
+name = "oddity_script_macros"
+description = "The `#[script]` attribute for Oddity Engine games."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[package.metadata.oddity]
+layer = "runtime"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+
+[lints]
+workspace = true

@@ -8,14 +8,24 @@
 //! Prefabs opened in isolation (Phase 3) get their own root the same way.
 
 use bevy_ecs::{
-    component::Component, entity::Entity, query::With, reflect::ReflectComponent, world::World,
+    component::Component, entity::Entity, entity_disabling::Disabled, query::With,
+    reflect::ReflectComponent, world::World,
 };
 use bevy_reflect::{Reflect, prelude::ReflectDefault};
+
+use crate::CommandError;
 
 /// Marks the top node of the level being edited. There is at most one.
 #[derive(Component, Reflect, Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[reflect(Component, Default)]
 pub struct LevelRoot;
+
+/// The node type a node was created as, such as `"Camera3D"`: what the
+/// level file records as its `kind`, and what picks its icon. A node without
+/// one is a plain `Node`.
+#[derive(Component, Reflect, Debug, Clone, PartialEq, Eq)]
+#[reflect(Component)]
+pub struct NodeKind(pub String);
 
 /// The current level's root node, if a level is open.
 pub fn level_root(world: &mut World) -> Option<Entity> {
@@ -37,6 +47,22 @@ pub fn is_in_level(world: &World, entity: Entity) -> bool {
             .map(|child_of| child_of.parent());
     }
     false
+}
+
+/// Checks that `entity` is a live node of the open level. Commands change
+/// only the level, never editor UI, and deleted nodes are only disabled
+/// (waiting for undo), so they count as gone.
+pub(crate) fn require_in_level(world: &World, entity: Entity) -> Result<(), CommandError> {
+    let found = world
+        .get_entity(entity)
+        .map_err(|_| CommandError::NoEntity(entity))?;
+    if found.contains::<Disabled>() {
+        return Err(CommandError::NoEntity(entity));
+    }
+    if !is_in_level(world, entity) {
+        return Err(CommandError::NotInLevel(entity));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

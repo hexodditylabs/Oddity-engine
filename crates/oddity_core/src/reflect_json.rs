@@ -7,7 +7,7 @@ use bevy_ecs::{
     world::World,
 };
 use bevy_reflect::{
-    GetPath, PartialReflect,
+    GetPath, PartialReflect, ReflectRef,
     serde::{TypedReflectDeserializer, TypedReflectSerializer},
 };
 use serde::de::DeserializeSeed;
@@ -71,6 +71,62 @@ pub fn field_json(
     };
     serde_json::to_value(TypedReflectSerializer::new(field, &registry))
         .map_err(|e| CommandError::BadValue(e.to_string()))
+}
+
+/// One top-level field of a component, for the Inspector.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldInfo {
+    /// The field's name, and its path for `component.set`. Empty for a
+    /// component that isn't a struct with named fields: the whole value.
+    pub name: String,
+    /// The field's Rust type path, e.g. `glam::Vec3`: what picks the
+    /// Inspector field that draws it.
+    pub type_path: String,
+    /// Its value as JSON.
+    pub value: Value,
+}
+
+/// A component's top-level fields, in declaration order. A component that
+/// isn't a struct with named fields (`Visibility`, a newtype) comes back as
+/// one unnamed field holding the whole value.
+pub fn fields_of(
+    world: &World,
+    entity: Entity,
+    component: &str,
+) -> Result<Vec<FieldInfo>, CommandError> {
+    let registry = world.resource::<AppTypeRegistry>().read();
+    let reflect_component = reflect_component(&registry, component)?;
+    let entity_ref = world
+        .get_entity(entity)
+        .map_err(|_| CommandError::NoEntity(entity))?;
+    let value =
+        reflect_component
+            .reflect(entity_ref)
+            .ok_or_else(|| CommandError::MissingComponent {
+                entity,
+                component: component.to_owned(),
+            })?;
+    let json = |field: &dyn PartialReflect| {
+        serde_json::to_value(TypedReflectSerializer::new(field, &registry))
+            .map_err(|e| CommandError::BadValue(e.to_string()))
+    };
+    match value.reflect_ref() {
+        ReflectRef::Struct(fields) => (0..fields.field_len())
+            .filter_map(|index| Some((fields.name_at(index)?, fields.field_at(index)?)))
+            .map(|(name, field)| {
+                Ok(FieldInfo {
+                    name: name.to_owned(),
+                    type_path: field.reflect_type_path().to_owned(),
+                    value: json(field)?,
+                })
+            })
+            .collect(),
+        _ => Ok(vec![FieldInfo {
+            name: String::new(),
+            type_path: value.reflect_type_path().to_owned(),
+            value: json(value.as_partial_reflect())?,
+        }]),
+    }
 }
 
 /// Read JSON as a value of the type the field currently has.

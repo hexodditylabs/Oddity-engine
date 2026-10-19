@@ -7,8 +7,11 @@ rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[package.metadata.oddity]
+layer = "tooling"
+
 [dependencies]
-bevy = { workspace = true }
+bevy = { workspace = true, features = ["bevy_feathers"] }
 oddity_icons = { workspace = true }
 
 [lints]

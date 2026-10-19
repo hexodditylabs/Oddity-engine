@@ -22,13 +22,18 @@
 //! nodes a level usually has. Very large trees will want row virtualisation.
 
 use bevy::{
-    picking::{Pickable, events::PointerClick, pointer::PointerButton},
+    picking::{
+        Pickable, PickingSettings,
+        events::{PointerClick, PointerDragDrop},
+        pointer::PointerButton,
+    },
     prelude::*,
 };
-use oddity_icons::{Icon, UiIcon};
+use oddity_icons::{Icon, UiIcon, UiIconSystems};
 
 use crate::{
     ActivePalette,
+    double_click::LastClick,
     fonts::OddityFonts,
     hover::{HoverFill, hover_fill_out, hover_fill_over, hover_fill_press, hover_fill_release},
 };
@@ -47,7 +52,8 @@ const PILL_PADDING: f32 = 6.0;
 pub(crate) fn plugin(app: &mut App) {
     app.add_message::<TreeEvent>().add_systems(
         PostUpdate,
-        rebuild_rows.before(bevy::ui::UiSystems::Prepare),
+        // Before the icon renderer, so new rows' icons show on their first frame.
+        rebuild_rows.before(UiIconSystems),
     );
 }
 
@@ -129,6 +135,17 @@ pub enum TreeEvent {
         tree: Entity,
         /// The row's key.
         key: u64,
+    },
+    /// Something was dragged onto a row and let go there: a file from an
+    /// [`ItemGrid`](crate::item_grid::ItemGrid), say.
+    Drop {
+        /// The [`TreeView`] entity.
+        tree: Entity,
+        /// The row's key.
+        key: u64,
+        /// The entity that was dragged (a grid's
+        /// [`GridCell`](crate::item_grid::GridCell), for a file).
+        dropped: Entity,
     },
     /// A row button was clicked.
     Button {
@@ -252,6 +269,7 @@ fn spawn_row(
             ChildOf(tree),
         ))
         .observe(click_row)
+        .observe(drop_on_row)
         .id();
 
     // Lines first, so the selection pill paints over them.
@@ -404,7 +422,7 @@ fn spawn_row(
     }
 }
 
-fn select_mode(keys: &ButtonInput<KeyCode>) -> SelectMode {
+pub(crate) fn select_mode(keys: &ButtonInput<KeyCode>) -> SelectMode {
     let toggle = if cfg!(target_os = "macos") {
         [KeyCode::SuperLeft, KeyCode::SuperRight]
     } else {
@@ -423,6 +441,8 @@ fn click_row(
     click: On<PointerClick>,
     rows: Query<&TreeRow>,
     keys: Res<ButtonInput<KeyCode>>,
+    settings: Res<PickingSettings>,
+    mut last_click: ResMut<LastClick>,
     mut events: MessageWriter<TreeEvent>,
 ) {
     if click.button != PointerButton::Primary {
@@ -431,7 +451,7 @@ fn click_row(
     let Ok(row) = rows.get(click.event_target()) else {
         return;
     };
-    if click.count >= 2 {
+    if last_click.is_double(&settings, row.tree, row.key) {
         events.write(TreeEvent::Activate {
             tree: row.tree,
             key: row.key,
@@ -441,6 +461,20 @@ fn click_row(
             tree: row.tree,
             key: row.key,
             mode: select_mode(&keys),
+        });
+    }
+}
+
+fn drop_on_row(
+    drop: On<PointerDragDrop>,
+    rows: Query<&TreeRow>,
+    mut events: MessageWriter<TreeEvent>,
+) {
+    if let Ok(row) = rows.get(drop.event_target()) {
+        events.write(TreeEvent::Drop {
+            tree: row.tree,
+            key: row.key,
+            dropped: drop.dropped,
         });
     }
 }
@@ -502,6 +536,20 @@ mod tests {
                 buttons: Vec::new(),
             })
             .collect()
+    }
+
+    #[test]
+    fn new_rows_show_their_icons_on_the_first_frame() {
+        let mut app = crate::test_app();
+        plugin(&mut app);
+        let mut items = rows(&[0, 1]);
+        for item in &mut items {
+            item.icon = Some(Icon::godot("Node3D"));
+            item.has_children = true;
+        }
+        app.world_mut().spawn(TreeView { items });
+        app.update();
+        assert!(crate::every_icon_drawn(&mut app));
     }
 
     #[test]

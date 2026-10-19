@@ -24,13 +24,18 @@ pub mod paths {
 
 /// Handles to every editor font, loaded at startup.
 #[derive(Resource, Clone, Debug)]
-#[allow(missing_docs)]
 pub struct OddityFonts {
+    /// Inter Regular: body text.
     pub ui: Handle<Font>,
+    /// Inter SemiBold: emphasis and headings.
     pub ui_bold: Handle<Font>,
+    /// Space Grotesk Medium: brand moments.
     pub brand: Handle<Font>,
+    /// Space Grotesk Bold: brand titles.
     pub brand_bold: Handle<Font>,
+    /// Geist Mono Regular: code, output, numbers.
     pub mono: Handle<Font>,
+    /// Geist Mono Medium: labels in the brand style.
     pub mono_medium: Handle<Font>,
 }
 

@@ -15,3 +15,5 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [alias]
 editor = "run -p oddity-editor --features dev"
+# Repository checks, e.g. `cargo xtask layers`.
+xtask = "run -p xtask --"

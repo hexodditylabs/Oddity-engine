@@ -1,0 +1,24 @@
+[package]
+name = "shooter"
+description = "The small top-down shooter from roadmap/scripting.md, used to test Oddity."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# A game is its own Cargo workspace, not part of the engine's.
+[workspace]
+
+[dependencies]
+oddity = { path = "../../crates/oddity" }
+
+# The engine's profiles, which a game outside its workspace doesn't get:
+# Bevy optimised even in debug builds, or the game crawls.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"

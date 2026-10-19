@@ -11,16 +11,34 @@
 //!
 //! [editor]
 //! main_level = "levels/main.level"   # optional
+//!
+//! [input.actions]                      # the game's input map, optional
+//! fire = ["Space", "MouseLeft", "GamepadSouth"]
+//!
+//! [input.axes2]
+//! move = { left = "KeyA", right = "KeyD", up = "KeyW", down = "KeyS", stick = "LeftStick" }
 //! ```
 //!
 //! The Hub reads `[engine] editor` to launch the right editor version.
+//!
+//! [`assets`] keeps the project's asset IDs, in `.import` files next to the
+//! assets. [`Project::create_game`] makes a whole new game: the game crate,
+//! a main level and the runner (see `template`).
+
+pub mod assets;
+mod template;
 
 use std::{
+    collections::BTreeMap,
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
+
+pub use assets::{AssetError, AssetId, AssetIndex, IMPORT_EXTENSION, ImportFile};
+pub use template::{OdditySource, crate_name, shared_target_dir};
 
 /// The project file's name.
 pub const FILE_NAME: &str = "oddity.toml";
@@ -62,8 +80,11 @@ pub enum ProjectError {
 }
 
 /// The contents of `oddity.toml`.
+///
+/// Unknown top-level sections are ignored, unlike unknown keys inside a
+/// section: a section added by a newer editor must not stop an older one from
+/// reading `[engine] editor` and saying which version the project needs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct ProjectFile {
     /// Name and version.
     pub project: ProjectSection,
@@ -72,6 +93,9 @@ pub struct ProjectFile {
     /// Editor settings stored with the project.
     #[serde(default, skip_serializing_if = "EditorSection::is_empty")]
     pub editor: EditorSection,
+    /// The game's named actions and axes.
+    #[serde(default, skip_serializing_if = "InputSection::is_empty")]
+    pub input: InputSection,
 }
 
 /// `[project]`
@@ -108,6 +132,49 @@ impl EditorSection {
     fn is_empty(&self) -> bool {
         self.main_level.is_none()
     }
+}
+
+/// `[input]`: the input map, which the game reads at start. Bindings are
+/// kept as written; the scripting runtime knows the key names and checks
+/// them.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct InputSection {
+    /// `[input.actions]`: action name → its bindings (`"Space"`,
+    /// `"MouseLeft"`, `"GamepadSouth"`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub actions: BTreeMap<String, Vec<String>>,
+    /// `[input.axes2]`: two-way axes, such as `move`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub axes2: BTreeMap<String, Axis2Entry>,
+}
+
+impl InputSection {
+    fn is_empty(&self) -> bool {
+        self.actions.is_empty() && self.axes2.is_empty()
+    }
+}
+
+/// One `[input.axes2]` entry: a binding per direction, and a stick
+/// (`"LeftStick"`, `"RightStick"`, `"DPad"`). Each part is optional.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Axis2Entry {
+    /// Towards -x.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<String>,
+    /// Towards +x.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<String>,
+    /// Towards +y.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub up: Option<String>,
+    /// Towards -y.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down: Option<String>,
+    /// Added to the keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stick: Option<String>,
 }
 
 fn default_version() -> String {
@@ -157,6 +224,7 @@ impl Project {
                     bevy: BEVY_VERSION.into(),
                 },
                 editor: EditorSection::default(),
+                input: InputSection::default(),
             },
         };
         project.validate()?;
@@ -195,8 +263,19 @@ impl Project {
     }
 
     /// Find the project that contains `start`, searching upward like Cargo does.
+    ///
+    /// A relative `start` is resolved against the working directory first, so
+    /// the returned project's root is absolute.
     pub fn find(start: impl AsRef<Path>) -> Result<Self, ProjectError> {
-        let start = start.as_ref();
+        // Relative paths run out of parents early (`"."` has the parent `""`,
+        // which has none), so the search could never leave the start folder.
+        // `absolute` rather than `canonicalize`, which gives verbatim `\\?\`
+        // paths on Windows that many tools refuse.
+        let start = std::path::absolute(start.as_ref()).map_err(|source| ProjectError::Io {
+            path: start.as_ref().to_path_buf(),
+            source,
+        })?;
+        let start = start.as_path();
         let mut dir = Some(if start.is_file() {
             start.parent().unwrap_or(start)
         } else {
@@ -212,12 +291,15 @@ impl Project {
     }
 
     /// Write `oddity.toml`.
+    ///
+    /// The old file stays whole until the new one is fully written, so a
+    /// crash or a full disk mid-save never leaves an empty project file.
     pub fn save(&self) -> Result<(), ProjectError> {
         self.validate()?;
         let path = self.file_path();
         let text =
             toml::to_string_pretty(&self.file).map_err(|e| ProjectError::Invalid(e.to_string()))?;
-        fs::write(&path, text).map_err(|source| ProjectError::Io { path, source })
+        write_atomic(&path, text.as_bytes()).map_err(|source| ProjectError::Io { path, source })
     }
 
     /// Path to `oddity.toml`.
@@ -255,22 +337,93 @@ impl Project {
                 )));
             }
         }
-        if let Some(level) = &self.file.editor.main_level
-            && Path::new(level).is_absolute()
-        {
-            return Err(ProjectError::Invalid(
-                "[editor] main_level must be relative to the project folder".into(),
-            ));
+        if let Some(level) = &self.file.editor.main_level {
+            check_main_level(level)?;
         }
         Ok(())
     }
 }
 
-fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
-    let core = text.split(['-', '+']).next()?;
+/// Replace the file at `path` with `bytes`. The old file stays whole until
+/// the new one is fully written, so a crash or a full disk mid-save never
+/// leaves an empty or half-written file.
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    // Same folder as the target, because a rename is only atomic within one
+    // filesystem; a dot name, so scans skip it. `fs::rename` replaces an
+    // existing file on Windows too.
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let temp = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    let written = write_synced(&temp, bytes).and_then(|()| fs::rename(&temp, path));
+    if written.is_err() {
+        // Best effort: the original error is the one worth reporting.
+        let _ = fs::remove_file(&temp);
+    }
+    written
+}
+
+/// Write `bytes` to a new file at `path` and flush them to disk, so a rename
+/// that follows can't land before the contents do.
+fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = fs::File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// `[editor] main_level` must name a file inside the project on every OS.
+fn check_main_level(level: &str) -> Result<(), ProjectError> {
+    check_relative(level)
+        .map_err(|why| ProjectError::Invalid(format!("[editor] main_level {level:?} {why}")))
+}
+
+/// A path stored in a project file must name a file inside the project on
+/// every OS; the error says why it doesn't.
+///
+/// The text is checked rather than `Path`, because `Path` follows the OS the
+/// editor runs on: `/levels/x.level` isn't absolute on Windows and
+/// `C:\levels\x.level` isn't absolute on Linux, yet the same project
+/// must mean the same file on both.
+pub(crate) fn check_relative(path: &str) -> Result<(), String> {
+    if path.contains('\\') {
+        return Err("must use / to separate folders, not \\".into());
+    }
+    // A leading `/` is a root (or a `//server` share); a `:` is a Windows
+    // drive such as `C:`, and isn't allowed in Windows file names anyway.
+    if path.starts_with('/') || path.contains(':') {
+        return Err("must be relative to the project folder".into());
+    }
+    if path.split('/').any(|part| part == "..") {
+        return Err("cannot use .. to point outside the project folder".into());
+    }
+    Ok(())
+}
+
+/// A version, ordered by semver precedence (field order matters for `Ord`).
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct Version<'a> {
+    core: (u64, u64, u64),
+    /// Before `pre`, so a release sorts above its own pre-releases.
+    is_release: bool,
+    /// Semver compares dot-separated identifiers, numeric ones as numbers.
+    /// Whole-string order is enough for `alpha < beta < rc` without a semver
+    /// dependency, at the cost of `rc.10` sorting before `rc.2`.
+    pre: Option<&'a str>,
+}
+
+fn parse_version(text: &str) -> Option<Version<'_>> {
+    // Build metadata doesn't take part in precedence.
+    let text = text.split('+').next()?;
+    let (core, pre) = match text.split_once('-') {
+        Some((_, "")) => return None,
+        Some((core, pre)) => (core, Some(pre)),
+        None => (text, None),
+    };
     let mut parts = core.split('.').map(|p| p.parse::<u64>().ok());
-    let version = (parts.next()??, parts.next()??, parts.next()??);
-    parts.next().is_none().then_some(version)
+    let core = (parts.next()??, parts.next()??, parts.next()??);
+    parts.next().is_none().then_some(Version {
+        core,
+        is_release: pre.is_none(),
+        pre,
+    })
 }
 
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
@@ -303,6 +456,28 @@ mod tests {
         assert!(text.contains("name = \"Readable\""));
         assert!(text.contains("[engine]"));
         assert!(!text.contains("[editor]"), "empty sections are left out");
+    }
+
+    #[test]
+    fn the_input_map_loads_and_survives_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(FILE_NAME),
+            "[project]\nname = \"Input\"\n\
+             [engine]\neditor = \"0.1.0\"\nbevy = \"0.20.0\"\n\
+             [input.actions]\nfire = [\"Space\", \"MouseLeft\"]\n\
+             [input.axes2]\nmove = { left = \"KeyA\", right = \"KeyD\", stick = \"LeftStick\" }\n",
+        )
+        .unwrap();
+        let project = Project::load(dir.path()).unwrap();
+        assert_eq!(project.file.input.actions["fire"], ["Space", "MouseLeft"]);
+        let movement = &project.file.input.axes2["move"];
+        assert_eq!(movement.left.as_deref(), Some("KeyA"));
+        assert_eq!(movement.up, None);
+        assert_eq!(movement.stick.as_deref(), Some("LeftStick"));
+
+        project.save().unwrap();
+        assert_eq!(Project::load(dir.path()).unwrap(), project);
     }
 
     #[test]
@@ -393,5 +568,161 @@ mod tests {
             project.editor_version_match("0.10.0"),
             VersionMatch::ProjectIsOlder
         );
+    }
+
+    /// Restores the working directory when dropped, even if the test panics,
+    /// so the temporary folder can be deleted (Windows refuses to delete the
+    /// current directory).
+    struct CurrentDirGuard(PathBuf);
+
+    impl CurrentDirGuard {
+        fn enter(dir: &Path) -> Self {
+            let previous = std::env::current_dir().unwrap();
+            std::env::set_current_dir(dir).unwrap();
+            Self(previous)
+        }
+    }
+
+    impl Drop for CurrentDirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
+    // The only test that changes the working directory; every other test
+    // uses absolute temporary paths, so running in parallel is safe.
+    #[test]
+    fn find_searches_upward_from_relative_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::create(dir.path(), "Relative").unwrap();
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+        let same_folder = |a: &Path, b: &Path| {
+            assert_eq!(fs::canonicalize(a).unwrap(), fs::canonicalize(b).unwrap());
+        };
+
+        // `oddity-editor .` run from inside `src`.
+        let from_src = {
+            let _cwd = CurrentDirGuard::enter(&src);
+            Project::find(".").unwrap()
+        };
+        assert!(from_src.root.is_absolute());
+        same_folder(&from_src.root, dir.path());
+
+        // `oddity-editor src` run from the project root.
+        let from_root = {
+            let _cwd = CurrentDirGuard::enter(dir.path());
+            Project::find("src").unwrap()
+        };
+        assert!(
+            from_root.root.is_absolute(),
+            "root {:?} must still work after the working directory changes",
+            from_root.root
+        );
+        same_folder(&from_root.root, dir.path());
+    }
+
+    #[test]
+    fn unknown_sections_from_newer_editors_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(FILE_NAME),
+            "[project]\nname = \"Future\"\n\
+             [engine]\neditor = \"99.0.0\"\nbevy = \"0.20.0\"\n\
+             [steam]\napp_id = 480\n",
+        )
+        .unwrap();
+        let project = Project::load(dir.path()).unwrap();
+        assert_eq!(project.file.engine.editor, "99.0.0");
+        assert_eq!(
+            project.editor_version_match(EDITOR_VERSION),
+            VersionMatch::ProjectIsNewer
+        );
+    }
+
+    #[test]
+    fn main_level_must_stay_inside_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::create(dir.path(), "Levels").unwrap();
+        let mut check = |level: &str| {
+            project.file.editor.main_level = Some(level.into());
+            project.save()
+        };
+
+        for level in ["levels/main.level", "main.level", "levels/./main.level"] {
+            assert!(check(level).is_ok(), "{level:?} should be accepted");
+        }
+        for level in [
+            "/levels/main.level",
+            "../../x.level",
+            "levels/../../x.level",
+            "C:/levels/x.level",
+            "C:x.level",
+            "//server/share/x.level",
+        ] {
+            assert!(
+                matches!(check(level), Err(ProjectError::Invalid(_))),
+                "{level:?} should be rejected"
+            );
+        }
+        for level in [r"C:\levels\x.level", r"levels\main.level"] {
+            match check(level) {
+                Err(ProjectError::Invalid(message)) => {
+                    assert!(message.contains('/'), "{message:?} should say to use /")
+                }
+                other => panic!("{level:?} should be rejected, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn save_replaces_the_file_instead_of_rewriting_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::create(dir.path(), "Before").unwrap();
+        // A second name for the current file shows whether save truncates
+        // it in place (a crash mid-write would leave it empty) or swaps a
+        // fully written file in, leaving the old one whole.
+        let old = dir.path().join("old.toml");
+        fs::hard_link(project.file_path(), &old).unwrap();
+
+        project.file.project.name = "After".into();
+        project.save().unwrap();
+
+        assert!(fs::read_to_string(&old).unwrap().contains("\"Before\""));
+        assert_eq!(Project::load(dir.path()).unwrap().name(), "After");
+        let mut names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        names.sort();
+        assert_eq!(names, [FILE_NAME, "old.toml"], "no temporary file is left");
+    }
+
+    #[test]
+    fn pre_releases_are_older_than_their_release() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::create(dir.path(), "Pre").unwrap();
+        let mut compare = |pinned: &str, editor: &str| {
+            project.file.engine.editor = pinned.into();
+            project.editor_version_match(editor)
+        };
+        assert_eq!(
+            compare("0.2.0-alpha", "0.2.0"),
+            VersionMatch::ProjectIsOlder
+        );
+        assert_eq!(
+            compare("0.2.0", "0.2.0-alpha"),
+            VersionMatch::ProjectIsNewer
+        );
+        assert_eq!(
+            compare("0.2.0-alpha", "0.2.0-beta"),
+            VersionMatch::ProjectIsOlder
+        );
+        assert_eq!(
+            compare("0.2.0-alpha", "0.1.9"),
+            VersionMatch::ProjectIsNewer
+        );
+        assert_eq!(compare("0.2.0-rc", "0.2.0-rc"), VersionMatch::Same);
+        assert_eq!(compare("0.2.0+build.5", "0.2.0"), VersionMatch::Same);
     }
 }

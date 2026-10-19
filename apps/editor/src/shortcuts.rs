@@ -18,9 +18,10 @@ use bevy::{input_focus::InputFocus, prelude::*, text::EditableText};
 use oddity_core::EditorWorldExt;
 
 use crate::{
+    actions::UiAction,
     docks::viewport::{Tool, ViewportAction},
-    docks::{ViewportSettings, add_node, delete_selection},
-    layout::DistractionFree,
+    docks::{delete_selection, open_add_node},
+    layout::ToggleDistractionFree,
 };
 
 pub struct ShortcutsPlugin;
@@ -62,7 +63,7 @@ fn shortcuts(
             Shortcut::Undo => world.undo(),
             Shortcut::Redo => world.redo(),
             Shortcut::AddNode => {
-                add_node(world);
+                open_add_node(world);
                 Ok(())
             }
             Shortcut::Delete => {
@@ -70,14 +71,12 @@ fn shortcuts(
                 Ok(())
             }
             Shortcut::Viewport(action) => {
-                action.apply(&mut world.resource_mut::<ViewportSettings>());
-                Ok(())
+                let (id, args) = action.command();
+                world.run_command(id, args).map(drop)
             }
-            Shortcut::DistractionFree => {
-                let mut focused = world.resource_mut::<DistractionFree>();
-                focused.0 = !focused.0;
-                Ok(())
-            }
+            Shortcut::DistractionFree => world
+                .run_command(ToggleDistractionFree::SPEC.id, serde_json::json!({}))
+                .map(drop),
         };
         // "Nothing to undo" and the like are normal; not worth a warning.
         if let Err(error) = result {

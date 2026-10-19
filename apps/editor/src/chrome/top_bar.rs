@@ -6,22 +6,31 @@
 //! are reusable objects, opened in isolation in their own tab (like Unity's
 //! Prefab Mode and Unreal's Blueprint editor).
 //!
-//! The play controls drive [`PlayState`]; running the game itself arrives
-//! with the project build pipeline. Everything here is presentation plus a
+//! The hammer runs `build.run` (see `build.rs`) and shows how the build is
+//! going; the play controls drive [`PlayState`], and running the game itself
+//! arrives with Play (scripting task E1). Everything here is presentation plus a
 //! little state, so later phases only have to react to [`TransportAction`].
+//!
+//! The menus are the ones registered through `oddity_plugin_api`, and each
+//! item runs its command by id, so a menu can do nothing the CLI, MCP and
+//! scripts can't.
 
+use bevy::ecs::message::Messages;
 use bevy::{
     feathers::{
-        controls::{ButtonVariant, FeathersButton},
+        controls::{
+            ButtonVariant, FeathersButton, FeathersMenu, FeathersMenuItem, FeathersMenuPopup,
+        },
         display::caption,
     },
     picking::{Pickable, events::PointerClick, pointer::PointerButton},
     prelude::*,
     text::FontSourceTemplate,
-    ui_widgets::Activate,
+    ui_widgets::{Activate, MenuButton},
 };
-use oddity_core::History;
+use oddity_core::{Args, CommandError, CommandExecuted, CommandSpec, EditorWorldExt, History};
 use oddity_icons::{Icon, UiIcon};
+use oddity_plugin_api::{EditorAppExt, EditorMode, Menu, MenuBar, MenuItem};
 use oddity_widgets::{
     ActivePalette,
     button::icon_button,
@@ -30,7 +39,11 @@ use oddity_widgets::{
 };
 
 use super::title_bar::WindowDragArea;
-use crate::project::CurrentProject;
+use crate::{
+    actions::{Run, UiAction, run_command, ui_state},
+    build::{BuildStatus, Builds},
+    project::CurrentProject,
+};
 
 /// Height of the controls in the bar (jackdaw uses 22).
 const CONTROL_HEIGHT: f32 = 22.0;
@@ -39,10 +52,22 @@ const ICON: f32 = 14.0;
 /// Corner radius of pills and buttons.
 const RADIUS: f32 = 5.0;
 
+/// The menus, document tabs, level picker and play controls.
 pub struct TopBarPlugin;
 
 impl Plugin for TopBarPlugin {
     fn build(&self, app: &mut App) {
+        if app.editor_mode() == EditorMode::Window {
+            // The menu bar, left to right. Features add their items to these.
+            for menu in ["File", "Edit", "Add", "View", "Tools", "Window", "Help"] {
+                app.add_menu(menu);
+            }
+        }
+        app.register_command::<Run<Start>>()
+            .register_command::<Run<Pause>>()
+            .register_command::<Run<Stop>>()
+            .register_command::<Run<Reload>>()
+            .register_command::<Run<ToggleWindow>>();
         app.init_resource::<PlayState>()
             .init_resource::<PlayWindow>()
             .add_message::<TransportAction>()
@@ -54,6 +79,7 @@ impl Plugin for TopBarPlugin {
                     update_window_mode_label,
                     update_level_tab,
                     style_header_controls,
+                    paint_header_details,
                 )
                     .chain(),
             );
@@ -103,6 +129,17 @@ pub enum TransportAction {
 }
 
 impl TransportAction {
+    /// The command its button runs.
+    fn command(self) -> &'static str {
+        match self {
+            TransportAction::Build => crate::build::BUILD_RUN,
+            TransportAction::Play => Start::SPEC.id,
+            TransportAction::Pause => Pause::SPEC.id,
+            TransportAction::Stop => Stop::SPEC.id,
+            TransportAction::Reload => Reload::SPEC.id,
+        }
+    }
+
     fn icon(self) -> Icon {
         match self {
             TransportAction::Build => Icon::at("hammer"),
@@ -115,7 +152,7 @@ impl TransportAction {
 }
 
 /// Everything between the app icon and the window buttons.
-pub fn top_bar_content() -> impl Scene {
+pub fn top_bar_content(menus: MenuBar) -> impl Scene {
     bsn! {
         Node {
             flex_grow: 1.0,
@@ -125,37 +162,69 @@ pub fn top_bar_content() -> impl Scene {
             align_items: AlignItems::Center,
             column_gap: px(8),
             padding: UiRect::right(px(8)),
+            // In a narrow window the controls are cut off at the right
+            // instead of pushing the window buttons off screen.
+            overflow: Overflow::clip(),
         }
         WindowDragArea
         Children [
-            @menus()
+            @menu_bar(menus) Node { flex_shrink: 0.0 }
             --
-            @document_tabs()
+            @document_tabs() Node { flex_shrink: 0.0 }
             --
-            @level_picker()
+            @level_picker() Node { flex_shrink: 0.0 }
             --
-            @transport()
+            @transport() Node { flex_shrink: 0.0 }
         ]
     }
 }
 
-fn menus() -> impl Scene {
+fn menu_bar(bar: MenuBar) -> impl Scene {
+    let menus: Vec<_> = bar.menus().iter().map(menu).collect();
     bsn! {
         Node { flex_direction: FlexDirection::Row, align_items: AlignItems::Center }
-        Children [
-            @menu("File") -- @menu("Edit") -- @menu("Add") -- @menu("View")
-            -- @menu("Tools") -- @menu("Window") -- @menu("Help")
-        ]
+        Children [ {menus} ]
     }
 }
 
-fn menu(name: &'static str) -> impl Scene {
-    bsn! {
+/// A menu's name in the bar. A menu with items opens them below it; one
+/// with none yet is just its name.
+fn menu(menu: &Menu) -> Box<dyn Scene> {
+    let name = menu.name.clone().into_owned();
+    let button = bsn! {
         @FeathersButton {
             @caption: bsn! { @caption(name) },
             @variant: ButtonVariant::Plain,
         }
-        on(move |_: On<Activate>| info!("{name} menu: not built yet"))
+    };
+    if menu.items.is_empty() {
+        return Box::new(button);
+    }
+    let items: Vec<_> = menu.items.iter().map(menu_item).collect();
+    Box::new(bsn! {
+        @FeathersMenu
+        Children [
+            @{button} MenuButton
+            --
+            @FeathersMenuPopup
+            Children [ {items} ]
+        ]
+    })
+}
+
+fn menu_item(item: &MenuItem) -> impl Scene {
+    let label = item.label.clone().into_owned();
+    let command = item.command.clone();
+    bsn! {
+        @FeathersMenuItem { @caption: bsn! { @caption(label) } }
+        on(move |_: On<Activate>, mut commands: Commands| {
+            let command = command.clone();
+            commands.queue(move |world: &mut World| {
+                if let Err(error) = world.run_command(&command, serde_json::json!({})) {
+                    warn!("{command}: {error}");
+                }
+            });
+        })
     }
 }
 
@@ -191,11 +260,11 @@ fn document_tabs() -> impl Scene {
                 --
                 Text("Untitled")
                 LevelTabLabel
+                HeaderText
                 TextFont {
                     font: FontSourceTemplate::Handle(paths::UI),
                     font_size: FontSize::Px(12.0),
                 }
-                TextColor({Color::srgba(1.0, 1.0, 1.0, 0.85)})
                 Pickable::IGNORE
             ]
             --
@@ -228,11 +297,11 @@ fn level_picker() -> impl Scene {
         })
         Children [
             Text("Main level")
+            HeaderText
             TextFont {
                 font: FontSourceTemplate::Handle(paths::UI),
                 font_size: FontSize::Px(12.0),
             }
-            TextColor({Color::srgba(1.0, 1.0, 1.0, 0.85)})
             Pickable::IGNORE
             --
             Node { flex_grow: 1.0 } Pickable::IGNORE
@@ -282,7 +351,8 @@ fn transport() -> impl Scene {
 fn transport_divider() -> impl Scene {
     bsn! {
         Node { width: px(1), height: px(12), margin: UiRect::horizontal(px(3)) }
-        BackgroundColor({Color::srgba(1.0, 1.0, 1.0, 0.12)})
+        TransportDivider
+        BackgroundColor
     }
 }
 
@@ -290,8 +360,8 @@ fn transport_button(action: TransportAction) -> impl Scene {
     bsn! {
         @icon_button(action.icon())
         TransportButton(action)
-        on(move |_: On<Activate>, mut actions: MessageWriter<TransportAction>| {
-            actions.write(action);
+        on(move |_: On<Activate>, mut commands: Commands| {
+            run_command(&mut commands, action.command(), serde_json::json!({}));
         })
     }
 }
@@ -307,12 +377,9 @@ fn window_mode_button() -> impl Scene {
         }
         HoverFill
         on(hover_fill_over) on(hover_fill_out) on(hover_fill_press) on(hover_fill_release)
-        on(|click: On<PointerClick>, mut mode: ResMut<PlayWindow>| {
+        on(|click: On<PointerClick>, mut commands: Commands| {
             if click.button == PointerButton::Primary {
-                *mode = match *mode {
-                    PlayWindow::Embedded => PlayWindow::Windowed,
-                    PlayWindow::Windowed => PlayWindow::Embedded,
-                };
+                run_command(&mut commands, ToggleWindow::SPEC.id, serde_json::json!({}));
             }
         })
         Children [
@@ -322,7 +389,6 @@ fn window_mode_button() -> impl Scene {
                 font: FontSourceTemplate::Handle(paths::UI),
                 font_size: FontSize::Px(11.0),
             }
-            TextColor({Color::srgba(1.0, 1.0, 1.0, 0.55)})
             Pickable::IGNORE
         ]
     }
@@ -340,6 +406,111 @@ struct LevelTabLabel;
 
 #[derive(Component, Default, Clone)]
 struct WindowModeLabel;
+
+/// Text in the bar's pills.
+#[derive(Component, Default, Clone)]
+struct HeaderText;
+
+/// The thin line between groups of play controls.
+#[derive(Component, Default, Clone)]
+struct TransportDivider;
+
+/// Colour the bar's text and dividers from the theme as they appear.
+fn paint_header_details(
+    palette: Res<ActivePalette>,
+    mut texts: Query<
+        (&mut TextColor, Has<WindowModeLabel>),
+        Or<(Added<HeaderText>, Added<WindowModeLabel>)>,
+    >,
+    mut dividers: Query<&mut BackgroundColor, Added<TransportDivider>>,
+) {
+    for (mut colour, secondary) in &mut texts {
+        colour.0 = if secondary {
+            palette.font_secondary
+        } else {
+            palette.font
+        };
+    }
+    for mut background in &mut dividers {
+        background.0 = palette.button_border;
+    }
+}
+
+/// Send a play control's message: what the transport buttons do.
+fn send_transport(
+    world: &mut World,
+    action: TransportAction,
+    id: &str,
+) -> Result<(), CommandError> {
+    if !world.contains_resource::<Messages<TransportAction>>() {
+        return Err(CommandError::Invalid(format!(
+            "{id} needs the editor window"
+        )));
+    }
+    world.write_message(action);
+    Ok(())
+}
+
+/// One `play.*` command per play control.
+macro_rules! transport_command {
+    ($name:ident, $action:expr, $id:literal, $description:literal) => {
+        #[doc = concat!("`", $id, "`.")]
+        struct $name;
+
+        impl UiAction for $name {
+            const SPEC: CommandSpec = CommandSpec::action($id, $description, &[]);
+
+            fn run(world: &mut World, _args: &Args) -> Result<(), CommandError> {
+                send_transport(world, $action, Self::SPEC.id)
+            }
+        }
+    };
+}
+
+transport_command!(
+    Start,
+    TransportAction::Play,
+    "play.start",
+    "Run the game, or resume it."
+);
+transport_command!(
+    Pause,
+    TransportAction::Pause,
+    "play.pause",
+    "Pause or unpause the running game."
+);
+transport_command!(
+    Stop,
+    TransportAction::Stop,
+    "play.stop",
+    "Stop the game and go back to editing."
+);
+transport_command!(
+    Reload,
+    TransportAction::Reload,
+    "play.reload",
+    "Hot-reload the running game."
+);
+
+/// `play.toggle_window`.
+struct ToggleWindow;
+
+impl UiAction for ToggleWindow {
+    const SPEC: CommandSpec = CommandSpec::action(
+        "play.toggle_window",
+        "Switch where Play runs the game: inside the editor's viewport or in its own window.",
+        &[],
+    );
+
+    fn run(world: &mut World, _args: &Args) -> Result<(), CommandError> {
+        let mut mode = ui_state::<PlayWindow>(world, Self::SPEC.id)?;
+        *mode = match *mode {
+            PlayWindow::Embedded => PlayWindow::Windowed,
+            PlayWindow::Windowed => PlayWindow::Embedded,
+        };
+        Ok(())
+    }
+}
 
 /// Paint pills once, from the theme (they are spawned before the palette is read).
 fn style_header_controls(
@@ -372,9 +543,8 @@ fn handle_transport(
     for action in actions.read() {
         let name = project.name().unwrap_or("the project");
         match action {
-            TransportAction::Build => {
-                info!("Build {name}: the project build pipeline arrives with scripting");
-            }
+            // The hammer runs `build.run` itself.
+            TransportAction::Build => {}
             TransportAction::Play => {
                 if *state != PlayState::Playing {
                     info!("Play {name} ({mode:?})");
@@ -402,23 +572,31 @@ fn handle_transport(
 }
 
 /// Play glows while running; Pause glows while paused; Pause, Stop and
-/// Reload are dimmed while stopped.
+/// Reload are dimmed while stopped. The hammer glows while building, and is
+/// red when the code doesn't build.
 fn update_transport_buttons(
     state: Res<PlayState>,
+    builds: Res<Builds>,
+    mut shown: Local<Option<BuildStatus>>,
     palette: Res<ActivePalette>,
     buttons: Query<(Entity, &TransportButton, &Children)>,
     added: Query<(), Added<TransportButton>>,
     mut backgrounds: Query<(&mut BackgroundColor, &mut HoverFill)>,
     mut images: Query<&mut ImageNode>,
 ) {
-    if !state.is_changed() && added.is_empty() {
+    // `Builds` changes with every line of output; the hammer only with the
+    // status.
+    let status_changed = *shown != Some(builds.status);
+    if !state.is_changed() && !status_changed && added.is_empty() {
         return;
     }
+    *shown = Some(builds.status);
     for (entity, TransportButton(action), children) in &buttons {
         let active = matches!(
-            (*state, action),
-            (PlayState::Playing, TransportAction::Play)
-                | (PlayState::Paused, TransportAction::Pause)
+            (*state, action, builds.status),
+            (PlayState::Playing, TransportAction::Play, _)
+                | (PlayState::Paused, TransportAction::Pause, _)
+                | (_, TransportAction::Build, BuildStatus::Building)
         );
         let enabled = match action {
             TransportAction::Build | TransportAction::Play => true,
@@ -436,10 +614,12 @@ fn update_transport_buttons(
         }
         let tint = if active && *action == TransportAction::Play {
             palette.success
+        } else if *action == TransportAction::Build && builds.status == BuildStatus::Failed {
+            palette.error
         } else if enabled {
-            Color::WHITE
+            palette.font
         } else {
-            Color::srgba(1.0, 1.0, 1.0, 0.35)
+            palette.font_disabled
         };
         for child in children {
             if let Ok(mut image) = images.get_mut(*child) {
@@ -469,12 +649,14 @@ fn update_window_mode_label(
 
 /// The tab shows the main level's name, with a dot when there are unsaved changes.
 fn update_level_tab(
+    mut executed: MessageReader<CommandExecuted>,
     history: Res<History>,
     project: Res<CurrentProject>,
     mut labels: Query<&mut Text, With<LevelTabLabel>>,
     added: Query<(), Added<LevelTabLabel>>,
 ) {
-    if !history.is_changed() && !project.is_changed() && added.is_empty() {
+    // Only a command can change what is unsaved, whoever ran it.
+    if executed.read().count() == 0 && !project.is_changed() && added.is_empty() {
         return;
     }
     let level = project
@@ -494,5 +676,72 @@ fn update_level_tab(
         if text.0 != label {
             text.0.clone_from(&label);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use oddity_core::{
+        CommandRegistry, EditorWorldExt, LevelRoot, Source, commands::RenameEntity, headless_app,
+    };
+
+    use super::*;
+
+    #[test]
+    fn every_menu_item_runs_a_registered_command() {
+        let mut app = headless_app();
+        app.insert_resource(EditorMode::Window)
+            .add_plugins((TopBarPlugin, crate::docks::DocksPlugin));
+        let bar = app.world().resource::<MenuBar>();
+        let names: Vec<&str> = bar.menus().iter().map(|m| m.name.as_ref()).collect();
+        assert_eq!(
+            names,
+            ["File", "Edit", "Add", "View", "Tools", "Window", "Help"]
+        );
+        let registry = app.world().resource::<CommandRegistry>();
+        let items: Vec<&MenuItem> = bar.menus().iter().flat_map(|m| &m.items).collect();
+        assert!(!items.is_empty());
+        for item in items {
+            assert!(
+                registry.spec(&item.command).is_some(),
+                "{} runs `{}`, which isn't registered",
+                item.label,
+                item.command
+            );
+        }
+    }
+
+    #[test]
+    fn headless_has_no_menus() {
+        let mut app = headless_app();
+        app.add_plugins((TopBarPlugin, crate::docks::DocksPlugin));
+        assert!(app.world().get_resource::<MenuBar>().is_none());
+    }
+
+    #[test]
+    fn the_unsaved_dot_follows_commands_from_any_source() {
+        let mut app = headless_app();
+        app.init_resource::<CurrentProject>()
+            .add_systems(Update, update_level_tab);
+        let world = app.world_mut();
+        let label = world.spawn((Text::default(), LevelTabLabel)).id();
+        let root = world.spawn((Name::new("Main"), LevelRoot)).id();
+        let shown = |app: &App| app.world().get::<Text>(label).unwrap().0.clone();
+
+        app.update();
+        assert_eq!(shown(&app), "Untitled");
+
+        let agent = Source::Mcp {
+            client: "Claude".into(),
+        };
+        app.world_mut()
+            .execute_as(RenameEntity::new(root, "Level"), agent)
+            .unwrap();
+        app.update();
+        assert_eq!(shown(&app), "Untitled •");
+
+        app.world_mut().undo().unwrap();
+        app.update();
+        assert_eq!(shown(&app), "Untitled");
     }
 }

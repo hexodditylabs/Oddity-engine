@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "oddity": {
+      "command": "cargo",
+      "args": ["editor", "--", "mcp", "samples/shooter"]
+    }
+  }
+}

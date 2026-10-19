@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 408" width="760" height="408" role="img" aria-label="Your code is compiled into your game, never into the editor" font-size="13">
+<style>
+svg{--ink:#1f2328;--quiet:#59636e;--edge:#8c959f;--rule:#d0d7de;--accent:#ff2d55;--bg:#ffffff;
+font-family:Inter,"Segoe UI",system-ui,-apple-system,sans-serif}
+@media (prefers-color-scheme:dark){svg{--ink:#e6edf3;--quiet:#9198a1;--edge:#6e7681;--rule:#30363d;--bg:#0d1117}}
+.bg{fill:var(--bg)}
+.ink{fill:var(--ink)}.quiet{fill:var(--quiet)}.acc{fill:var(--accent)}.b{font-weight:600}
+.box{fill:none;stroke:var(--edge);stroke-width:1.25}
+.main{fill:var(--accent);fill-opacity:.12;stroke:var(--accent);stroke-width:2}
+.dash{fill:none;stroke:var(--edge);stroke-width:1.25;stroke-dasharray:5 4}
+.wire{fill:none;stroke:var(--edge);stroke-width:1.25}
+.rule{stroke:var(--rule)}
+.arrowhead{fill:var(--edge)}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
+<rect class="bg" width="760" height="408" rx="12"/>
+<text x="24" y="34" class="ink b" font-size="15">Your code is compiled into your game, never into the editor</text>
+<text x="24" y="54" class="quiet" font-size="11.5">The editor learns your types from each build and talks to the running game.</text>
+<rect x="24" y="76" width="300" height="64" rx="8" class="box"/>
+<text x="40" y="100" class="ink b">Your code</text>
+<text x="40" y="118" class="ink" font-size="11.5">src/*.rs, edited in VS Code or Zed</text>
+<rect x="436" y="76" width="300" height="64" rx="8" class="box"/>
+<text x="452" y="100" class="ink b">cargo build</text>
+<text x="452" y="118" class="ink" font-size="11.5">in the background; only your crate recompiles</text>
+<rect x="436" y="204" width="300" height="72" rx="8" class="main"/>
+<text x="452" y="228" class="ink b">Your game program</text>
+<text x="452" y="246" class="ink" font-size="11.5">.oddity/runner: Bevy + oddity + your code</text>
+<text x="452" y="262" class="ink" font-size="11.5">runs scripts and systems</text>
+<rect x="436" y="320" width="300" height="64" rx="8" class="box"/>
+<text x="452" y="344" class="ink b">Levels and prefabs</text>
+<text x="452" y="362" class="ink" font-size="11.5">JSON files: the editor saves, the game loads</text>
+<rect x="24" y="204" width="300" height="180" rx="8" class="box"/>
+<text x="40" y="228" class="ink b">Oddity editor</text>
+<text x="140" y="228" class="quiet" font-size="11.5">prebuilt · never runs your code</text>
+<text x="40" y="254" class="ink" font-size="11.5">Scripts are values: Player { speed: 6 }</text>
+<text x="40" y="272" class="ink" font-size="11.5">Inspector drawn from your types</text>
+<text x="40" y="290" class="ink" font-size="11.5">Edits are undoable commands</text>
+<text x="40" y="308" class="ink" font-size="11.5">Play starts your game; Stop closes it</text>
+<g class="wire"><path d="M324 108H432" marker-end="url(#arrow)"/><path d="M586 140V200" marker-end="url(#arrow)"/><path d="M436 232H328" marker-end="url(#arrow)"/><path d="M324 352H432" marker-end="url(#arrow)"/><path d="M686 320V280" marker-end="url(#arrow)"/><path d="M174 140V200" marker-end="url(#arrow)"/></g>
+<path d="M328 258H432" class="wire" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="338" y="100" class="quiet" font-size="11.5">on save</text>
+<text x="338" y="224" class="quiet" font-size="11.5">your types</text>
+<text x="338" y="276" class="quiet" font-size="11.5">live link</text>
+<text x="338" y="290" class="quiet" font-size="11.5">while playing</text>
+<text x="354" y="344" class="quiet" font-size="11.5">saves</text>
+<text x="694" y="304" class="quiet" font-size="11.5">Play loads</text>
+<text x="182" y="176" class="quiet" font-size="11.5">watches src/, shows errors</text>
+</svg>

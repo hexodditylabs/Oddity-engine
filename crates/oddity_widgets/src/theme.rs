@@ -184,45 +184,82 @@ impl ThemeConfig {
 ///
 /// Names follow Godot's `ThemeConfiguration` fields.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[allow(missing_docs)]
 pub struct Palette {
+    /// The theme's base colour, as configured.
     pub base: Color,
+    /// The accent colour, as configured.
     pub accent: Color,
+    /// Godot's `dark_color_1`: the base darkened towards black, behind fields.
     pub dark_1: Color,
+    /// Godot's `dark_color_3`: hovered and pressed fields.
     pub dark_3: Color,
+    /// Godot's `contrast_color_1`: the base lightened towards white.
     pub contrast_1: Color,
+    /// Godot's `contrast_color_2`: the base lightened further than `contrast_1`.
     pub contrast_2: Color,
+    /// Popups, menus and dialogs.
     pub surface_popup: Color,
+    /// The window background behind the docks.
     pub surface_lowest: Color,
+    /// A surface between the window background and `surface_low`.
     pub surface_lower: Color,
+    /// Pane headers and hovered side-dock tabs.
     pub surface_low: Color,
+    /// Dock panels and the active tab.
     pub surface_base: Color,
+    /// Raised areas inside a panel, such as sub-pane headers and groups.
     pub surface_high: Color,
+    /// Areas raised above `surface_high`.
     pub surface_higher: Color,
+    /// The most raised surfaces.
     pub surface_highest: Color,
+    /// Button fill.
     pub button_normal: Color,
+    /// Hovered button fill.
     pub button_hover: Color,
+    /// Pressed button fill.
     pub button_pressed: Color,
+    /// Disabled button fill.
     pub button_disabled: Color,
+    /// Button and control borders.
     pub button_border: Color,
+    /// Hovered fill of flat (borderless) controls.
     pub flat_hover: Color,
+    /// Pressed fill of flat controls.
     pub flat_pressed: Color,
+    /// Selected rows in trees and lists.
     pub item_selected: Color,
+    /// Inspector category headers.
     pub category: Color,
+    /// The tree's relationship lines between parents and children.
     pub relationship_line: Color,
+    /// Normal text.
     pub font: Color,
+    /// Dimmer text: hints, inactive tabs, secondary labels.
     pub font_secondary: Color,
+    /// Text under the pointer.
     pub font_hover: Color,
+    /// Text on selected or focused items.
     pub font_focus: Color,
+    /// Disabled text.
     pub font_disabled: Color,
+    /// A faint accent fill: hovered drag handles, toggled-on toolbar buttons.
     pub highlight: Color,
+    /// Selected text and selection boxes.
     pub selection: Color,
+    /// The focus ring.
     pub focus_border: Color,
+    /// Success messages.
     pub success: Color,
+    /// Warning messages.
     pub warning: Color,
+    /// Error messages.
     pub error: Color,
+    /// The X axis (red) in gizmos and vector fields.
     pub axis_x: Color,
+    /// The Y axis (green) in gizmos and vector fields.
     pub axis_y: Color,
+    /// The Z axis (blue) in gizmos and vector fields.
     pub axis_z: Color,
 }
 

@@ -7,9 +7,13 @@ rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[package.metadata.oddity]
+layer = "tooling"
+
 [dependencies]
 bevy = { workspace = true }
 resvg = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

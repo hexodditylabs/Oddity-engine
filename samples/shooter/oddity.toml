@@ -1,0 +1,16 @@
+[project]
+name = "Shooter"
+version = "0.1.0"
+
+[engine]
+editor = "0.1.0"
+bevy = "0.20.0"
+
+[editor]
+main_level = "levels/main.level"
+
+[input.actions]
+fire = ["Space", "MouseLeft", "GamepadSouth"]
+
+[input.axes2]
+move = { left = "KeyA", right = "KeyD", up = "KeyW", down = "KeyS", stick = "LeftStick" }

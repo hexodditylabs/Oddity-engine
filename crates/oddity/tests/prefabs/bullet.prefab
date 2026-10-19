@@ -1,0 +1,19 @@
+{
+  "format": "oddity-prefab",
+  "version": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Bullet",
+      "parent": null,
+      "components": {
+        "bevy_transform::components::transform::Transform": {
+          "translation": [0.0, 0.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "script:5b7e11e7": { "speed": 20.0 }
+      }
+    }
+  ]
+}

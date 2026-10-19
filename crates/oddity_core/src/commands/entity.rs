@@ -11,7 +11,10 @@ use bevy_ecs::{
 };
 use serde_json::{Value, json};
 
-use crate::{CommandError, EditorCommand, Selection};
+use crate::{
+    CommandError, EditorCommand, Invocation, LevelRoot, Selection,
+    level::{level_root, require_in_level},
+};
 
 fn require(world: &World, entity: Entity) -> Result<(), CommandError> {
     world
@@ -39,7 +42,8 @@ pub(crate) fn subtree(world: &World, root: Entity) -> Vec<Entity> {
     out
 }
 
-/// Create a new named entity, optionally as a child.
+/// Create a new named node in the open level: under a parent, or at the
+/// top of the level.
 ///
 /// The entity is created (disabled) as soon as the command is built, so its
 /// id is known before it runs and stays the same through undo and redo.
@@ -61,7 +65,7 @@ impl SpawnEntity {
         }
     }
 
-    /// Spawn it as the last child of `parent`.
+    /// Spawn it as the last child of `parent` instead of the level root.
     pub fn child_of(mut self, parent: Entity) -> Self {
         self.parent = Some(parent);
         self
@@ -79,19 +83,16 @@ impl EditorCommand for SpawnEntity {
     }
 
     fn apply(&mut self, world: &mut World) -> Result<(), CommandError> {
-        if let Some(parent) = self.parent {
-            require(world, parent)?;
-            if world.get::<Disabled>(parent).is_some() {
-                return Err(CommandError::NoEntity(parent));
-            }
-        }
+        let parent = match self.parent {
+            Some(parent) => parent,
+            None => level_root(world).ok_or(CommandError::NoLevel)?,
+        };
+        require_in_level(world, parent)?;
         let mut entity = world
             .get_entity_mut(self.entity)
             .map_err(|_| CommandError::NoEntity(self.entity))?;
         entity.remove::<Disabled>();
-        if let Some(parent) = self.parent {
-            entity.insert(ChildOf(parent));
-        }
+        entity.insert(ChildOf(parent));
         Ok(())
     }
 
@@ -104,6 +105,14 @@ impl EditorCommand for SpawnEntity {
             selection.remove(self.entity);
         }
         Ok(())
+    }
+
+    fn invocation(&self) -> Invocation {
+        let mut args = json!({ "name": self.name });
+        if let Some(parent) = self.parent {
+            args["parent"] = json!(parent.to_bits());
+        }
+        Invocation::new("entity.spawn", args)
     }
 
     fn output(&self) -> Value {
@@ -144,9 +153,11 @@ impl EditorCommand for DespawnEntity {
     }
 
     fn apply(&mut self, world: &mut World) -> Result<(), CommandError> {
-        require(world, self.entity)?;
-        if world.get::<Disabled>(self.entity).is_some() {
-            return Err(CommandError::NoEntity(self.entity));
+        require_in_level(world, self.entity)?;
+        if world.get::<LevelRoot>(self.entity).is_some() {
+            return Err(CommandError::Invalid(
+                "the level root cannot be deleted".into(),
+            ));
         }
         self.disabled.clear();
         for entity in subtree(world, self.entity) {
@@ -171,6 +182,10 @@ impl EditorCommand for DespawnEntity {
             }
         }
         Ok(())
+    }
+
+    fn invocation(&self) -> Invocation {
+        Invocation::new("entity.despawn", json!({ "entity": self.entity.to_bits() }))
     }
 
     fn discard(&mut self, world: &mut World, applied: bool) {
@@ -208,6 +223,7 @@ impl EditorCommand for RenameEntity {
         if name.is_empty() {
             return Err(CommandError::BadValue("a name cannot be empty".into()));
         }
+        require_in_level(world, self.entity)?;
         let mut entity = world
             .get_entity_mut(self.entity)
             .map_err(|_| CommandError::NoEntity(self.entity))?;
@@ -232,9 +248,16 @@ impl EditorCommand for RenameEntity {
         }
         Ok(())
     }
+
+    fn invocation(&self) -> Invocation {
+        Invocation::new(
+            "entity.rename",
+            json!({ "entity": self.entity.to_bits(), "name": self.name }),
+        )
+    }
 }
 
-/// Move an entity under a new parent, or to the top level with `None`.
+/// Move a node under a new parent, or to the top of the level with `None`.
 /// Undo puts it back at the same position among its old siblings.
 pub struct ReparentEntity {
     entity: Entity,
@@ -244,7 +267,7 @@ pub struct ReparentEntity {
 }
 
 impl ReparentEntity {
-    /// Prepare to move `entity` under `parent` (`None` = top level).
+    /// Prepare to move `entity` under `parent` (`None` = the level root).
     pub fn new(entity: Entity, parent: Option<Entity>) -> Self {
         Self {
             entity,
@@ -260,14 +283,21 @@ impl EditorCommand for ReparentEntity {
     }
 
     fn apply(&mut self, world: &mut World) -> Result<(), CommandError> {
-        require(world, self.entity)?;
-        if let Some(parent) = self.parent {
-            require(world, parent)?;
-            if subtree(world, self.entity).contains(&parent) {
-                return Err(CommandError::Invalid(
-                    "a node cannot become a child of itself or its own children".into(),
-                ));
-            }
+        require_in_level(world, self.entity)?;
+        if world.get::<LevelRoot>(self.entity).is_some() {
+            return Err(CommandError::Invalid(
+                "the level root cannot be moved".into(),
+            ));
+        }
+        let parent = match self.parent {
+            Some(parent) => parent,
+            None => level_root(world).ok_or(CommandError::NoLevel)?,
+        };
+        require_in_level(world, parent)?;
+        if subtree(world, self.entity).contains(&parent) {
+            return Err(CommandError::Invalid(
+                "a node cannot become a child of itself or its own children".into(),
+            ));
         }
         if self.old.is_none() {
             self.old = Some(world.get::<ChildOf>(self.entity).map(|child_of| {
@@ -279,14 +309,7 @@ impl EditorCommand for ReparentEntity {
                 (parent, index)
             }));
         }
-        match self.parent {
-            Some(parent) => {
-                world.entity_mut(parent).add_child(self.entity);
-            }
-            None => {
-                world.entity_mut(self.entity).remove::<ChildOf>();
-            }
-        }
+        world.entity_mut(parent).add_child(self.entity);
         Ok(())
     }
 
@@ -304,5 +327,15 @@ impl EditorCommand for ReparentEntity {
             }
         }
         Ok(())
+    }
+
+    fn invocation(&self) -> Invocation {
+        Invocation::new(
+            "entity.reparent",
+            json!({
+                "entity": self.entity.to_bits(),
+                "parent": self.parent.map(Entity::to_bits),
+            }),
+        )
     }
 }

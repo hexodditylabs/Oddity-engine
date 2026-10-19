@@ -7,6 +7,9 @@ rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[package.metadata.oddity]
+layer = "app"
+
 [[bin]]
 name = "oddity-editor"
 path = "src/main.rs"
@@ -16,10 +19,13 @@ path = "src/main.rs"
 dev = ["bevy/dynamic_linking"]
 
 [dependencies]
-bevy = { workspace = true }
+bevy = { workspace = true, features = ["bevy_feathers"] }
 winit = { workspace = true }
+oddity_build = { workspace = true }
 oddity_core = { workspace = true }
 oddity_icons = { workspace = true }
+oddity_mcp = { workspace = true }
+oddity_plugin_api = { workspace = true }
 oddity_project = { workspace = true }
 oddity_widgets = { workspace = true }
 serde_json = { workspace = true }

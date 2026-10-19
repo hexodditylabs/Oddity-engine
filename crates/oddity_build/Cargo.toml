@@ -1,0 +1,25 @@
+[package]
+name = "oddity_build"
+description = "Oddity Engine's editor side of game builds: watching the code, running cargo, reading its messages, describing the game's types."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[package.metadata.oddity]
+layer = "tooling"
+# Builds run from the CLI and MCP too, without a window.
+headless = true
+
+[dependencies]
+oddity_project = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

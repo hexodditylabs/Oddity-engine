@@ -32,7 +32,7 @@ use std::borrow::Cow;
 
 use bevy::color::{Color, Srgba};
 
-pub use plugin::{IconCache, IconsPlugin, UiIcon};
+pub use plugin::{IconCache, IconsPlugin, UiIcon, UiIconSystems};
 pub use raster::{IconError, RgbaImage, rasterize};
 
 mod embedded {

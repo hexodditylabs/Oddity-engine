@@ -1,0 +1,28 @@
+[package]
+name = "oddity_mcp"
+description = "Oddity Engine's MCP server: every registered command, query and resource as MCP tools, so AI agents can drive the editor."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[package.metadata.oddity]
+layer = "extension"
+
+[dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+oddity_core = { workspace = true }
+rmcp = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client", "transport-async-rw"] }
+tokio = { workspace = true, features = ["io-util", "time"] }
+
+[lints]
+workspace = true

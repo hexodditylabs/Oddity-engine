@@ -23,12 +23,16 @@ use bevy::{
     winit::WINIT_WINDOWS,
 };
 use oddity_icons::{Icon, UiIcon};
+use oddity_plugin_api::MenuBar;
 use oddity_widgets::ActivePalette;
 
 use super::top_bar::top_bar_content;
 
 /// Height of the title bar in logical pixels (jackdaw uses 36).
 const BAR_HEIGHT: f32 = 36.0;
+/// The wizard cat at the left of the bar. Larger than the 16 px menu icons,
+/// so the brand reads at a glance.
+const APP_ICON: f32 = 24.0;
 /// Width of each caption button (Windows 11 uses 46).
 const BUTTON_WIDTH: f32 = 46.0;
 /// How close to a window edge the pointer must be to resize.
@@ -69,7 +73,7 @@ pub fn configure(window: &mut Window) {
 
 /// The title bar: app icon, the top bar's menus and controls, then the
 /// window buttons. One row, like jackdaw.
-pub fn title_bar() -> impl Scene {
+pub fn title_bar(menus: MenuBar) -> impl Scene {
     let left_pad = if NATIVE_BUTTONS {
         TRAFFIC_LIGHT_SPACE
     } else {
@@ -87,12 +91,13 @@ pub fn title_bar() -> impl Scene {
         WindowDragArea
         on(drag_window)
         Children [
-            UiIcon { icon: Icon::oddity_cat(), size: 16.0 }
+            UiIcon { icon: Icon::oddity_cat(), size: APP_ICON }
+            Node { flex_shrink: 0.0 }
             WindowDragArea
             --
-            @top_bar_content()
+            @top_bar_content(menus)
             --
-            Node { align_self: AlignSelf::Stretch }
+            Node { align_self: AlignSelf::Stretch, flex_shrink: 0.0 }
             Children [ { caption_buttons() } ]
         ]
     }
@@ -247,6 +252,14 @@ fn drag_window(
 ) {
     if press.button != PointerButton::Primary || !drag_areas.contains(press.original_event_target())
     {
+        return;
+    }
+    // The same press on a resize edge starts a resize (`edge_resize`);
+    // starting a move as well would win, so the edge would never resize.
+    let on_edge = window
+        .cursor_position()
+        .and_then(|cursor| edge_at(cursor, Vec2::new(window.width(), window.height())));
+    if !NATIVE_BUTTONS && !maximized.0 && window.resizable && on_edge.is_some() {
         return;
     }
     if press.count.is_multiple_of(2) {

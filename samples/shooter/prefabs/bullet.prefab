@@ -1,0 +1,33 @@
+{
+  "format": "oddity-prefab",
+  "version": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Bullet",
+      "parent": null,
+      "kind": "MeshInstance3D",
+      "components": {
+        "oddity_level::shapes::MeshShape": {
+          "shape": {
+            "Sphere": {
+              "radius": 0.15
+            }
+          },
+          "color": {
+            "Srgba": {
+              "red": 1.0,
+              "green": 0.85,
+              "blue": 0.2,
+              "alpha": 1.0
+            }
+          }
+        },
+        "script:b3e8a514": {
+          "speed": 20.0,
+          "damage": 10.0
+        }
+      }
+    }
+  ]
+}

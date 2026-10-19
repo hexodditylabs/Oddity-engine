@@ -86,6 +86,12 @@ impl SplitHandle {
             start_size: 0.0,
         }
     }
+
+    /// `size` limited to `min..=max`. Never panics: if `min` is above `max`
+    /// (the fields are public, so a scene can set them that way), `min` wins.
+    pub fn clamp(&self, size: f32) -> f32 {
+        size.min(self.max).max(self.min)
+    }
 }
 
 /// A handle between two docks. Highlights in the accent colour while hovered
@@ -187,8 +193,8 @@ fn drag(
     let size = match handle.target {
         ResizeTarget::Before => handle.start_size + distance,
         ResizeTarget::After => handle.start_size - distance,
-    }
-    .clamp(handle.min, handle.max);
+    };
+    let size = handle.clamp(size);
 
     if let Ok(mut node) = nodes.get_mut(target) {
         match handle.axis {
@@ -228,5 +234,29 @@ fn unhighlight(
     }
     if let Ok(mut bg) = backgrounds.get_mut(out.event_target()) {
         bg.0 = Color::NONE;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_keeps_sizes_in_range() {
+        let handle = SplitHandle::new(SplitAxis::Horizontal, ResizeTarget::Before, 100.0, 300.0);
+        assert_eq!(handle.clamp(50.0), 100.0);
+        assert_eq!(handle.clamp(200.0), 200.0);
+        assert_eq!(handle.clamp(400.0), 300.0);
+    }
+
+    #[test]
+    fn clamp_survives_min_above_max() {
+        let handle = SplitHandle {
+            min: 300.0,
+            max: 100.0,
+            ..default()
+        };
+        assert_eq!(handle.clamp(50.0), 300.0);
+        assert_eq!(handle.clamp(500.0), 300.0);
     }
 }

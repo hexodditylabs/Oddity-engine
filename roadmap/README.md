@@ -7,7 +7,18 @@ written in Rust, with a Unity-Hub-style launcher on top. It copies Godot's look,
 layout and icons; underneath it is Bevy's ECS, and everything a game uses
 compiles down to plain Bevy.
 
-![The six phases, with Phases 0 to 2 built](images/phases.svg)
+![The eight phases, with Phases 0 to 2 built](images/phases.svg)
+
+**The detailed plans**
+
+| Document | What |
+| --- | --- |
+| [modularity.md](modularity.md) | Layers, the shape of a feature, the editor extension API, features in games (from Phase 3) |
+| [commands.md](commands.md) | Commands every feature registers, undo per document, MCP, automation (from Phase 3) |
+| [scripting.md](scripting.md) | Unity-style scripting, levels on disk, Play, physics: design and tasks (Phase 3) |
+| [game-features.md](game-features.md) | Assets, animation, game UI, saving, export, 2D, navigation, particles (Phase 4) |
+| [steam.md](steam.md) | Steam: achievements, lobbies, leaderboards, cloud saves (Phase 4, networking in 5) |
+| [multiplayer.md](multiplayer.md) | Host/join, synced nodes and fields, RPCs, QUIC and Steam transports (Phase 5) |
 
 **Contents**
 
@@ -17,7 +28,7 @@ compiles down to plain Bevy.
 4. [Repository layout](#repository-layout)
 5. [Phases in detail](#phases-in-detail)
 6. [Levels, prefabs and instances](#levels-prefabs-and-instances)
-7. [Scripting model](#scripting-model)
+7. [Scripting](#scripting)
 8. [Hub, CLI, MCP and plugins](#hub-cli-mcp-and-plugins)
 9. [Widget library](#widget-library)
 10. [Bevy features we depend on](#bevy-features-we-depend-on)
@@ -63,11 +74,16 @@ What works today:
   icons, with entities and components underneath. The Bevy you know keeps working.
 - **One command layer.** Every action is a command. Menus, shortcuts, the CLI,
   MCP and plugins all call the same commands, which gives undo/redo everywhere.
+- **Modular.** Every feature is its own set of crates, in checked layers.
+  Built-in features enter the editor through the same API plugins will use,
+  back ends are swappable, and games compile only the features they turn on.
+  See [modularity.md](modularity.md).
 - **Native Bevy UI.** Our own widget layer on Bevy's `bevy_ui_widgets` and
   Feathers, themed with Godot's palette.
-- **Rust is the scripting language.** Godot's ideas (nodes, `get_node`,
-  `ready`/`update`, signals) on top; no built-in code editor. Scripts open in
-  VS Code or Zed, which bring rust-analyzer.
+- **Unity-style scripting in Rust.** Scripts are structs attached to nodes,
+  with `_onready`, `_onprocess` and friends, Inspector fields, events and
+  signals; plain Bevy systems work alongside. No built-in code editor: scripts
+  open in VS Code or Zed. See [scripting.md](scripting.md).
 - **The Hub for users, never required for development.** Debug builds,
   headless commands and `--no-hub` skip it.
 - **Bevy 0.20 is the seed.** Pinned to exactly `0.20.0`. Each project pins its
@@ -110,30 +126,50 @@ Oddity-engine/
 │   ├── oddity_widgets/        theme, fonts, docks, tree, fields, buttons         ✓
 │   ├── oddity_core/           commands, undo/redo, selection, level root         ✓
 │   ├── oddity_project/        oddity.toml format                                 ✓
-│   ├── oddity_scene/          levels and prefabs on top of BSN                   Phase 3
+│   ├── oddity/                what games depend on: prelude, oddity::run         Phase 3
+│   ├── oddity_script/         scripts, Ctx, the runner, events, signals, timers  Phase 3
+│   ├── oddity_script_macros/  #[script], #[listener], #[signal], #[on]           Phase 3
+│   ├── oddity_level/          level and prefab files (JSON), overrides           Phase 3
+│   ├── oddity_physics/        physics nodes and callbacks, engine-independent    Phase 3
+│   ├── oddity_physics_rapier/ the Rapier backend                                 Phase 3
+│   ├── oddity_physics_editor/ physics nodes in Add Node, shapes in the viewport  Phase 3
+│   ├── oddity_build/          background cargo builds, compiler messages         Phase 3
 │   ├── oddity_viewport/       editor camera, grid, gizmos, picking               Phase 3
-│   ├── oddity_script/         #[script], get_node, signals, handler table        Phase 3
-│   ├── oddity_mcp/            MCP server: commands → tools                       Phase 4
-│   ├── oddity_plugin_api/     EditorPlugin trait (public contract)               Phase 4
-│   ├── oddity_launch/         Hub ↔ editor handoff (public contract)             Phase 5
-│   └── oddity_hub/            installs, version manifest, project registry       Phase 5
+│   ├── oddity_plugin_api/     editor registries: docks, menus, nodes, fields     ✓ v0 (public in 6)
+│   ├── oddity_steam/          Steam: achievements, lobbies, leaderboards, cloud  Phase 4
+│   ├── oddity_steam_editor/   Steam settings page                                Phase 4
+│   ├── oddity_net/            multiplayer: sessions, sync, RPCs                  Phase 5
+│   ├── oddity_net_quic/       the QUIC transport                                 Phase 5
+│   ├── oddity_net_steam/      the Steam transport and lobbies                    Phase 5
+│   ├── oddity_net_editor/     network nodes, multi-player Play                   Phase 5
+│   ├── oddity_mcp/            MCP server: commands → tools                       ✓ v0 (v1 in 6)
+│   ├── oddity_launch/         Hub ↔ editor handoff (public contract)             Phase 7
+│   └── oddity_hub/            installs, version manifest, project registry       Phase 7
 ├── apps/
 │   ├── editor/                oddity-editor binary                               ✓
-│   ├── hub/                   oddity-hub binary: UI + CLI                        Phase 5
-│   └── sandbox/               a test game to edit                                Phase 3
-├── templates/                 2d/ and 3d/ project templates                      Phase 5
+│   ├── hub/                   oddity-hub binary: UI + CLI                        Phase 7
+│   └── (games are separate projects; see samples/)
+├── tools/xtask/               `cargo xtask layers`: checks the crate layers      Phase 3
+├── samples/shooter/           the test game used while building scripting       Phase 3
+├── templates/                 2d/ and 3d/ project templates                      Phase 7
 ├── third_party/               Godot icons and @icons, with their MIT licences    ✓
 └── THIRD_PARTY_NOTICES.md
 ```
 
+Every crate sits in a layer (runtime, tooling, extension, app) and may only
+depend downwards; a feature's editor half is its own `_editor` crate. The rules
+are in [modularity.md](modularity.md) and checked in CI.
+
 Two crates are public contracts: `oddity_launch` (older editors must still
 launch from a newer Hub) and `oddity_plugin_api` (third-party plugins depend on
-it). Change them rarely and version them.
+it from Phase 6; before that it's internal and may change). Change them rarely
+and version them.
 
 ## Phases in detail
 
-No dates: they get set once the pace of Phase 3 is known. MCP can move up to
-follow Phase 1, since it only needs the command layer.
+No dates: they get set once the pace of Phase 3 is known. A first MCP server
+(stdio, headless) is in Phase 3, right after the command work; see
+[commands.md](commands.md#mcp).
 
 ### Phase 0 · Foundations ✓
 
@@ -177,9 +213,25 @@ follow Phase 1, since it only needs the command layer.
 *Done when you can make, save, reopen and play a level, and edit a prefab in
 isolation.* This is where Oddity becomes a usable editor.
 
+**Modularity and commands first** — tasks P1 to P4 in
+[modularity.md](modularity.md#build-plan) and K1 to K6 in
+[commands.md](commands.md#build-plan). Suggested order: P1, K1, K2, P2, K3,
+K4, then P3 and P4 with their tracks; K5 before level tabs; K6 any time after K2.
+- [x] P1 · The layer check: every crate declares its layer; `cargo xtask layers` in CI
+- [x] K1 · Command kinds (edit, setting, action, query), examples, invocations; first queries
+- [x] K2 · Every step records its source (you, CLI, MCP, plugin, script); `CommandExecuted`
+- [x] P2 · `oddity_plugin_api` v0: window/headless modes, commands, dock tabs, menu items
+- [x] K3 · One intention, one undo step: merging drags, `batch` by name, agent groups
+- [x] K4 · The round-trip check: every command's do, undo and redo tested automatically
+- [x] P3 · Node types registry and `node.create` (with the Nodes track below)
+- [x] P4 · Inspector field registry (with the Inspector track below)
+- [ ] K5 · One history per open level or prefab, plus one for project settings
+- [x] K6 · MCP v0: stdio, headless, tools generated from the command registry
+
 **Inspector**
 - [ ] Editable fields: Feathers number and text inputs, checkboxes, dropdowns;
-      dragging a number scrubs it; every change is one undo step
+      dragging a number scrubs it; every change is one undo step; each field
+      type registered through `oddity_plugin_api` (P4)
 - [ ] Add Component and Remove Component
 - [ ] Instance overrides shown in bold, with Apply and Revert
 
@@ -192,59 +244,98 @@ isolation.* This is where Oddity becomes a usable editor.
 - [ ] 2D view with Godot's rulers and canvas
 
 **Levels and prefabs**
-- [ ] Save and load `.level` and `.prefab` files (BSN) through `oddity_scene`
+- [ ] Save and load `.level` and `.prefab` files (JSON) through `oddity_level`
 - [ ] Level tabs and the level picker work for real; unsaved-changes prompt
 - [ ] Prefab mode: its own tab, an isolated world, a breadcrumb
 - [ ] Instances: place a prefab in a level, override values, Apply / Revert
 - [ ] FileSystem: watch for changes, drag a prefab into the viewport or hierarchy
 
 **Nodes**
-- [ ] Node registry: node types as component presets, each with its Godot icon
+- [x] Node registry: node types as component presets, each with its Godot icon,
+      registered through `oddity_plugin_api` (P3)
 - [ ] Add Node dialog with search and favourites
 - [ ] Rename in place, drag to reparent, context menu, Copy Node Path,
       `%Unique` names
 
-**Scripting**
-- [ ] Per-project editor build: the editor compiles together with the game code
-- [ ] `#[script]` with `ready` and `update`; `Ctx`; `get_node` returning `NodeRef`
-- [ ] `#[signal]`, `ctx.emit`, `connect`, the `#[handler]` table
-- [ ] Signals dock: connect a signal to a handler by name
-- [ ] Attach Script / New Script; "Open in VS Code / Zed"; clickable compiler
-      errors
+**Scripting, Play and physics** — the full task list is in
+[scripting.md](scripting.md#build-plan), milestones A to G:
+- [ ] A · The runtime: `#[script]`, the runner, `Ctx`, node references,
+      events, signals, timers, input
+- [ ] B · Level and prefab files
+- [ ] C · The game program (`oddity::run`) and the project template
+- [ ] D · The editor: background builds, script fields, references, New Script
+- [ ] E · Play and Stop, with a live link to the running game
+- [ ] F · Physics nodes and collision callbacks (Rapier)
+- [ ] G · Sound, UI buttons, debug drawing
 
-**Play**
-- [ ] Play, pause, stop, reload: edit state vs play state, embedded or windowed
-- [ ] Output dock shows the game's log
+### Phase 4 · Game features
 
-### Phase 4 · CLI, MCP and plugins
+*Done when a small game can be made, saved, exported and shipped on Steam.*
+The rough plan for each feature is in [game-features.md](game-features.md);
+Steam's is in [steam.md](steam.md).
 
-*Done when an agent and a sample plugin both edit a level.*
+- [ ] Assets and importing: `.import` settings, glTF models, textures, audio,
+      the Import dock, hot reload
+- [ ] Materials (`.material` files) edited in the Inspector
+- [ ] Animation: AnimationPlayer node, an Animation dock
+- [ ] Game UI: Control nodes, layout in the 2D view, themes and fonts
+- [ ] Moving between levels: loading screens, global nodes, additive levels
+- [ ] Saving progress: save slots and prefs, Steam Cloud when enabled
+- [ ] Exporting: Windows, Linux, macOS, Web
+- [ ] Project features: Project Settings › Features turns the game's `oddity`
+      Cargo features on and off; unused extensions hide (modularity P5)
+- [ ] Steam: achievements, stats, overlay, lobbies, leaderboards, cloud saves
+- [ ] 2D: the 2D view, sprites, 2D physics
+- [ ] Navigation: navmeshes and agents
+- [ ] Particles
+- [ ] Hot-patching of code inside script callbacks (Bevy's `hotpatching`)
+
+### Phase 5 · Multiplayer
+
+*Done when two players can play a co-op level over Steam.* Design and tasks:
+[multiplayer.md](multiplayer.md).
+
+- [ ] Sessions: host, join, leave over QUIC; the NetworkManager node
+- [ ] Networked nodes, NetworkTransform, networked prefabs
+- [ ] `#[sync]` fields and RPCs
+- [ ] Play with several players from the editor
+- [ ] Steam transport and lobbies
+- [ ] Dedicated server export
+
+### Phase 6 · CLI, MCP and plugins
+
+*Done when an agent and a sample plugin both edit a level.* MCP v0 (stdio,
+headless) already exists from Phase 3.
 
 - [ ] Editor CLI with `clap`: `run`, `build --target`, `plugin add`
-- [ ] MCP server with `rmcp`: tools are editor commands; resources are the
-      level tree, project files and logs; stdio and HTTP; works headless
-- [ ] `EditorPlugin` API v1 in `oddity_plugin_api`: docks, menu items, commands,
-      inspector widgets, asset importers; plugins are Cargo dependencies
-- [ ] Hot-patching of script method bodies
+- [ ] Command palette, command scripts (`oddity-editor run`, `--dry-run`) and
+      History's *Copy as script* (commands K7)
+- [ ] MCP v1: attach to an open editor over HTTP; an agent's edits show live
+      and undo with Ctrl+Z (commands K8)
+- [ ] `EditorPlugin` API v1: make `oddity_plugin_api` (in use internally since
+      Phase 3) stable, versioned and documented; add asset importers and a
+      sample plugin; plugins are Cargo dependencies
 
-### Phase 5 · Hub
+### Phase 7 · Hub
 
 *Done when the Hub installs two editor versions and opens a project in each.*
 
 - [ ] Launch handoff contract in `oddity_launch`; the editor refuses to start
       without the Hub except in dev, headless and `--no-hub`
-- [ ] Hub CLI: `new`, `open`, `install`, `list`, `doctor`
+- [ ] Hub CLI: `new`, `open`, `install`, `list`, `doctor` (Rust, the linker,
+      and Microsoft's C++ Build Tools on Windows)
 - [ ] Hub UI: projects, installs, modules (Rust targets), toolchain check
 - [ ] Version manifest on GitHub Releases; verified downloads, side-by-side installs
 - [ ] Project templates (2D, 3D)
 
-### After Phase 5
+### Later
 
 - Prefab variants (a Goblin based on Enemy) and nested prefabs
 - WASM plugins loaded at runtime with `wasmtime`, then a plugin browser
-- A `bevy_remote` bridge into the running game for MCP; the editor as an MCP client
-- An immediate (Godot-exact) script dispatcher, if deferred writes ever get in the way
-- Asset previews, import settings, animation and shader docks
+- Client-side prediction and rollback for competitive multiplayer
+- The editor as an MCP client; MCP tools for the running game over the live link
+- Embedded Play inside the viewport
+- An audio mixer, localisation, modding, consoles, VR
 - Hub extras: templates and plugin browser, news, self-update
 
 ## Levels, prefabs and instances
@@ -260,95 +351,55 @@ single "scene" concept. Decided 14 October 2026.
 | **Prefab** (`.prefab`) | A reusable object: Player, Enemy, Door. | Double-click to open in isolation: its own tab, an empty world with only the prefab, and a breadcrumb `Level ▸ Enemy`. Like Unity's Prefab Mode and Unreal's Blueprint editor. |
 | **Instance** | A prefab placed in a level. | Change values in the Inspector. Changed values show in bold; Apply sends them to the prefab, Revert drops them. |
 
-- **Underneath, both are BSN files.** This is an editor decision, not an engine
-  one, so it stays cheap to change. Bevy 0.20's scene patches carry the overrides.
-- **Unchanged by this:** the node tree inside a level or prefab, `get_node`,
-  scripts with `ready`/`update`, and signals.
+- **Both are JSON files**, written and read by `oddity_level`. Bevy 0.20 has
+  BSN only as the `bsn!` macro (the `.bsn` file format isn't released), so the
+  format is ours; [scripting.md](scripting.md#the-level-format) has the details.
+- An instance stores only the prefab's path and its overrides, so changing the
+  prefab updates every instance that didn't override that value.
 - **Project file:** `[editor] main_level = "levels/main.level"` sets what Play runs.
 
-## Scripting model
+## Scripting
 
-Game code is written in Rust. Godot's ideas sit on top, and everything compiles
-down to plain Bevy, so every Bevy crate still works.
-
-| What you see (Godot idea) | What Bevy runs underneath |
-| --- | --- |
-| Node in the Hierarchy | Entity + `Name` + `ChildOf` / `Children` |
-| Node type (Sprite2D, Camera3D…) | A preset of components in the node registry; required components fill in the rest |
-| Script with `ready` / `update` | A component plus systems generated by `#[script]` |
-| `ctx.get_node("../Enemy")` | A path resolved by walking names in the hierarchy; returns a `NodeRef` |
-| `#[signal]` + `ctx.emit` | An entity event, triggered on the emitting entity |
-| `connect` (in code or the editor) | An observer on the emitter that calls a handler from the `#[handler]` table |
-| Global signals | Buffered messages |
-| Logic across many entities | Plain Bevy systems |
-
-Rule of thumb: about *this* entity → script; between entities → signal; about
-*many* entities → system.
-
-### Example
+Unity-style scripting, in Rust. A script is a struct attached to a node; a
+node can have several; `pub` fields show in the Inspector; callbacks run in
+Hierarchy order and their changes apply immediately. Plain Bevy systems run
+alongside. The full design, API reference and build plan are in
+**[scripting.md](scripting.md)**.
 
 ```rust
-#[signal]
-pub struct Died;
-
 #[script]
+pub struct Player {
+    #[default(6.0)]
+    pub speed: f32,              // in the Inspector, saved in the level
+    pub bullet: Prefab,          // dragged in from the FileSystem
+    cooldown: f32,               // private: runtime only
+}
+
 impl Script for Player {
-    fn update(&mut self, ctx: &mut Ctx, dt: f32) {
-        ctx.transform.translation.x += self.speed * dt;
+    fn _onprocess(&mut self, ctx: &mut Ctx, delta: f32) {
+        let movement = ctx.input().axis2("move");
+        ctx.translate(Vec3::new(movement.x, 0.0, -movement.y) * self.speed * delta);
 
-        let enemy = ctx.get_node("../Enemy");      // like Godot's get_node
-        enemy.modify::<Health>(|h| h.0 -= 1);      // queued write
-
-        if self.health <= 0 {
-            ctx.emit(Died);                        // like emit_signal("died")
+        self.cooldown -= delta;
+        if ctx.input().action_pressed("fire") && self.cooldown <= 0.0 {
+            self.cooldown = 0.25;
+            ctx.instantiate(&self.bullet, ctx.global_transform());
         }
-    }
-}
-
-#[script]
-impl Script for Enemy {
-    fn ready(&mut self, ctx: &mut Ctx) {
-        // like get_node("../Player").died.connect(_on_player_died)
-        ctx.get_node("../Player").connect::<Died>(ctx.entity, "on_player_died");
-    }
-
-    #[handler]
-    fn on_player_died(&mut self, _ctx: &mut Ctx, _signal: &Died) {
-        self.celebrating = true;
-    }
-}
-
-// Plain Bevy system for logic across many entities
-fn despawn_dead(mut commands: Commands, q: Query<(Entity, &Health)>) {
-    for (e, hp) in &q {
-        if hp.0 <= 0 { commands.entity(e).despawn(); }
     }
 }
 ```
 
-### One frame, step by step
+The editor never contains or runs your code. Your game crate compiles in the
+background; the editor learns your types from each build, so the Inspector
+updates without a restart. Play runs your game as its own program with a live
+link back to the editor.
 
-![Scripts read now; writes and signals land right after](images/scripting-frame.svg)
+![Your code is compiled into your game, never into the editor](images/scripting-architecture.svg)
 
-Scripts read other nodes immediately, but their writes and emitted signals
-apply right after the script finishes, like Godot's `set_deferred`. A later
-Godot-exact dispatcher can make writes instant without changing user code.
+Each frame, the runner calls scripts one at a time; your systems run in
+parallel as usual.
 
-### Decisions
-
-- **Deferred writes first.** `NodeRef` is designed so an immediate dispatcher
-  can replace its internals later.
-- **Handlers are registered by name.** Rust can't look up methods at runtime,
-  so `#[handler]` fills a name → function table used by the Signals dock, MCP
-  and the CLI.
-- **Editor support:** unique sibling names (already enforced when adding
-  nodes), Copy Node Path, `%Unique` names, and warnings for broken paths and
-  connections.
-- **No built-in script editor.** New Script offers a script or a plain system,
-  and opens it in VS Code or Zed.
-- **Per-project editor build,** so the Inspector sees the game's real Rust types.
-- **Hardest open piece:** instance overrides with Apply / Revert, built on BSN
-  scene patches rather than a format of our own.
+![One frame: scripts one at a time, systems in parallel](images/scripting-frame.svg)
 
 ## Hub, CLI, MCP and plugins
 
@@ -379,13 +430,19 @@ oddity-editor plugin add <name>
 oddity-editor mcp ./my_game               # MCP server over stdio
 ```
 
-**MCP.** The editor runs an MCP server built with `rmcp`. Tools are editor
-commands (list entities, inspect and set components, spawn, save, run);
-resources expose the level tree, project files and logs. Stdio for agents and
-CI, HTTP to attach to an editor that's already open. It runs headless.
+**MCP.** The editor runs an MCP server built with `rmcp`. It has no list of
+its own: every registered command becomes a tool (queries marked read-only,
+destructive actions marked destructive), so a new feature or plugin is usable
+by agents the moment it registers its commands. Resources expose the level
+tree, selection, history, node types, project files and logs. Agent edits are
+labelled in History and undo like yours. Stdio for agents and CI (Phase 3),
+HTTP to attach to an editor that's already open (Phase 6). Details in
+[commands.md](commands.md#mcp).
 
 **Plugins.** v1: Rust crate plugins through the `EditorPlugin` trait, listed as
-Cargo dependencies (adding one means a rebuild). v2: WASM plugins with
+Cargo dependencies (adding one means a rebuild). They use the same registries
+Oddity's own features have used since Phase 3, so a plugin can do anything a
+built-in feature can. v2: WASM plugins with
 `wasmtime`, sandboxed and loaded at runtime, needed before a marketplace.
 
 ## Widget library
@@ -418,12 +475,17 @@ palette, plus the editor-shaped widgets Feathers doesn't have.
 | `bevy_ui`, BSN (`bsn!`), Feathers | Every panel | 2 ✓ |
 | `bevy_input_focus`, `EditableText` | Keyboard focus, search fields, shortcuts | 2 ✓ |
 | `bevy_picking` | UI clicks ✓, then viewport selection | 2 ✓, 3 |
-| `bevy_reflect` | Inspector ✓, saving, editable fields | 2 ✓, 3 |
-| BSN scenes and scene patches | Levels, prefabs, instance overrides | 3 |
+| `bevy_reflect` (+ `reflect_auto_register`) | Inspector ✓, saving, finding scripts | 2 ✓, 3 |
+| Reflection serialization | Level and prefab files (our JSON format) | 3 |
+| Exclusive systems, `FixedUpdate`, messages | The script runner, signals | 3 |
+| `bevy_remote` | Live link between the editor and the running game | 3 |
+| `bevy_rapier3d` 0.37 (not Bevy itself) | Physics, behind our own nodes | 3 |
 | Cameras, render-to-texture, render layers | Viewport inside a dock; editor-only objects | 3 |
 | Gizmos | Grid, selection outlines, transform handles | 3 |
 | States | Edit mode vs play mode | 3 |
-| `bevy_remote` | MCP bridge into the running game | Later |
+| `hotpatching` | Code changes inside callbacks without restarting the game | 4 |
+| `bevy_animation`, glTF, Bevy UI, Bevy audio | Animation, imported models, game UI, sound | 4 |
+| `bevy_replicon` 0.45 + `bevy_replicon_quinnet` 0.21 (not Bevy itself) | Multiplayer replication and the QUIC transport | 5 |
 
 ## Prerequisites
 
@@ -444,21 +506,26 @@ Knowledge: comfortable Rust (ownership, traits, generics), Bevy ECS basics
 | --- | --- |
 | Bevy breaks APIs about every three months | Pinned to `=0.20.0`; upgrade only in a dedicated pass with the migration guide |
 | AI suggestions target older Bevy APIs | Hand over the 0.20 notes at session start; feed compiler errors back; use Bevy's examples as reference |
-| BSN keeps changing | Keep save/load behind `oddity_scene` so the format can be swapped |
-| Instance overrides are hard | Build on BSN scene patches; ship Apply/Revert before variants and nesting |
-| Per-project editor builds are slow | Dynamic linking in dev; hot-patching in Phase 4 |
+| Level files need our own format (no `.bsn` files in 0.20) | Keep it small, versioned (`"version": 1`) and round-trip tested; it lives entirely in `oddity_level` |
+| Instance overrides are hard | Store overrides as plain field paths; ship Apply/Revert before variants and nesting |
+| The physics crate we use falls behind | Game code only sees our physics nodes; switching engines is a new backend plugin |
+| Building your game takes time | Only your crate recompiles; Bevy is cached once per machine; hot-patching in Phase 4 |
+| An undo that doesn't fully undo goes unnoticed for weeks | Every command carries an example, and one test runs do, undo and redo on all of them (commands K4) |
+| Crates slowly tangle as features are added quickly | Layers declared per crate and checked by `cargo xtask layers` in CI; extensions can't depend on each other |
 | Public contracts (launch, plugin API) drift | Version them; test that older editors still launch from the current Hub |
 | A solo project loses momentum | Every phase ends in something that runs; keep each phase small |
+| Third-party crates lag behind Bevy 0.20 (Hanabi, tilemaps, Lightyear, `bevy_steamworks` today) | Prefer libraries that don't depend on Bevy (`steamworks`, `landmass`) with our own thin wrappers; otherwise wait or port |
 
 **Open questions**
 
 - 2D, 3D or both in the first release
 - Long-term hosting for editor builds beyond GitHub Releases
 - Which code editor "Open script" defaults to, and how it's chosen
+- When to move physics to Avian (once it supports Bevy 0.20), or stay on Rapier
 
 **Settled:** name and logo (Oddity Engine by Hex0ddity Labs, wizard-cat mark);
-Bevy 0.20 has text editing (`EditableText`, Feathers inputs) and BSN with
-scene patches; levels and prefabs instead of scenes.
+Bevy 0.20 has text editing (`EditableText`, Feathers inputs); levels and
+prefabs instead of scenes; Unity-style scripting (see [scripting.md](scripting.md)).
 
 **Licensing.** Godot's code and editor icons are MIT-licensed; the SVGs and
 Godot's licence live in `third_party/godot/` and are credited in

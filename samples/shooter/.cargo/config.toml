@@ -1,0 +1,3 @@
+# Share the engine's target folder, so Bevy is built once for both.
+[build]
+target-dir = "../../target"

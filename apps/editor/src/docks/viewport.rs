@@ -4,7 +4,8 @@
 //! on Godot's default clear colour. The toolbar is real already: its state
 //! lives in [`ViewportSettings`], which the Phase 3 gizmos read, and the same
 //! keys as Godot drive it (Q, W, E, R for the tools, T for local space, Y for
-//! snapping).
+//! snapping). Buttons and keys run the `viewport.*` commands, so MCP and
+//! scripts can too.
 
 use bevy::{
     feathers::{
@@ -17,7 +18,9 @@ use bevy::{
     text::{FontSourceTemplate, LetterSpacing},
     ui_widgets::Activate,
 };
+use oddity_core::{ArgKind, ArgSpec, Args, CommandError, CommandSpec, registry::string_arg};
 use oddity_icons::{Icon, IconSet, NodeColor, UiIcon};
+use oddity_plugin_api::EditorAppExt;
 use oddity_widgets::{
     brand,
     button::{Toggled, tool_button},
@@ -25,17 +28,83 @@ use oddity_widgets::{
     fonts::paths,
 };
 
+use crate::actions::{Run, UiAction, run_command, ui_state};
+
 /// Godot's editor icon size.
 const ICON: f32 = 16.0;
 /// Godot's default viewport clear colour, `Color(0.3, 0.3, 0.3)`.
 const CLEAR_COLOUR: Color = Color::srgb(0.3, 0.3, 0.3);
 
+/// The viewport's settings, toolbar and commands.
 pub struct ViewportPlugin;
 
 impl Plugin for ViewportPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ViewportSettings>()
+            .register_command::<Run<SetTool>>()
+            .register_command::<Run<ToggleLocalSpace>>()
+            .register_command::<Run<ToggleSnap>>()
             .add_systems(Update, (follow_mode_tabs, show_settings).chain());
+    }
+}
+
+/// `viewport.set_tool`.
+struct SetTool;
+
+impl UiAction for SetTool {
+    const SPEC: CommandSpec = CommandSpec::action(
+        "viewport.set_tool",
+        "Pick the viewport's tool: select, move, rotate or scale (Godot's Q, W, E, R).",
+        &[ArgSpec {
+            name: "tool",
+            kind: ArgKind::String,
+            required: true,
+            description: "select, move, rotate or scale",
+        }],
+    );
+
+    fn run(world: &mut World, args: &Args) -> Result<(), CommandError> {
+        let name = string_arg(args, "tool")?;
+        let tool = Tool::from_name(name).ok_or_else(|| CommandError::BadArgument {
+            name: "tool".into(),
+            reason: format!("`{name}` isn't select, move, rotate or scale"),
+        })?;
+        ui_state::<ViewportSettings>(world, Self::SPEC.id)?.tool = tool;
+        Ok(())
+    }
+}
+
+/// `viewport.toggle_local_space`.
+struct ToggleLocalSpace;
+
+impl UiAction for ToggleLocalSpace {
+    const SPEC: CommandSpec = CommandSpec::action(
+        "viewport.toggle_local_space",
+        "Switch the viewport's tools between the node's own axes and the world's (Godot's T).",
+        &[],
+    );
+
+    fn run(world: &mut World, _args: &Args) -> Result<(), CommandError> {
+        let mut settings = ui_state::<ViewportSettings>(world, Self::SPEC.id)?;
+        settings.local_space = !settings.local_space;
+        Ok(())
+    }
+}
+
+/// `viewport.toggle_snap`.
+struct ToggleSnap;
+
+impl UiAction for ToggleSnap {
+    const SPEC: CommandSpec = CommandSpec::action(
+        "viewport.toggle_snap",
+        "Switch snapping to fixed steps on or off for the viewport's tools (Godot's Y).",
+        &[],
+    );
+
+    fn run(world: &mut World, _args: &Args) -> Result<(), CommandError> {
+        let mut settings = ui_state::<ViewportSettings>(world, Self::SPEC.id)?;
+        settings.snap = !settings.snap;
+        Ok(())
     }
 }
 
@@ -77,6 +146,22 @@ pub enum Tool {
 }
 
 impl Tool {
+    /// The name `viewport.set_tool` takes.
+    fn name(self) -> &'static str {
+        match self {
+            Tool::Select => "select",
+            Tool::Move => "move",
+            Tool::Rotate => "rotate",
+            Tool::Scale => "scale",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Self> {
+        [Tool::Select, Tool::Move, Tool::Rotate, Tool::Scale]
+            .into_iter()
+            .find(|tool| tool.name() == name)
+    }
+
     fn icon(self) -> Icon {
         Icon::godot(match self {
             Tool::Select => "ToolSelect",
@@ -99,12 +184,14 @@ pub enum ViewportAction {
 }
 
 impl ViewportAction {
-    /// Apply this action to the settings.
-    pub fn apply(self, settings: &mut ViewportSettings) {
+    /// The command that does this, and its arguments.
+    pub fn command(self) -> (&'static str, serde_json::Value) {
         match self {
-            ViewportAction::Tool(tool) => settings.tool = tool,
-            ViewportAction::ToggleLocalSpace => settings.local_space = !settings.local_space,
-            ViewportAction::ToggleSnap => settings.snap = !settings.snap,
+            ViewportAction::Tool(tool) => {
+                (SetTool::SPEC.id, serde_json::json!({ "tool": tool.name() }))
+            }
+            ViewportAction::ToggleLocalSpace => (ToggleLocalSpace::SPEC.id, serde_json::json!({})),
+            ViewportAction::ToggleSnap => (ToggleSnap::SPEC.id, serde_json::json!({})),
         }
     }
 
@@ -135,7 +222,12 @@ pub struct CentreDock;
 /// The dock body: toolbar above the view.
 pub fn viewport_page() -> impl Scene {
     bsn! {
-        Node { flex_grow: 1.0, flex_direction: FlexDirection::Column, min_height: px(0) }
+        Node {
+            flex_grow: 1.0,
+            flex_direction: FlexDirection::Column,
+            min_width: px(0),
+            min_height: px(0),
+        }
         Children [
             Node {
                 flex_shrink: 0.0,
@@ -154,10 +246,15 @@ pub fn viewport_page() -> impl Scene {
                 -- @toolbar_button(ViewportAction::ToggleSnap, Icon::godot("Snap"))
             ]
             --
+            // Clipped, so the welcome card never holds the viewport open
+            // when the window is small.
             Node {
                 flex_grow: 1.0,
+                min_width: px(0),
+                min_height: px(0),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                overflow: Overflow::clip(),
             }
             BackgroundColor(CLEAR_COLOUR)
             Children [ @welcome() ]
@@ -170,9 +267,10 @@ fn toolbar_button(action: ViewportAction, icon: Icon) -> impl Scene {
         @tool_button(icon)
         ViewportButton({action})
         Toggled
-        on(|activate: On<Activate>, buttons: Query<&ViewportButton>, mut settings: ResMut<ViewportSettings>| {
+        on(|activate: On<Activate>, buttons: Query<&ViewportButton>, mut commands: Commands| {
             if let Ok(ViewportButton(action)) = buttons.get(activate.entity) {
-                action.apply(&mut settings);
+                let (id, args) = action.command();
+                run_command(&mut commands, id, args);
             }
         })
     }
@@ -303,5 +401,33 @@ fn icon_row() -> impl Scene {
             -- UiIcon { icon: {Icon::at("hammer").tinted(NodeColor::Mesh)}, size: ICON }
             -- UiIcon { icon: {Icon::at("hammer").tinted(NodeColor::Animation)}, size: ICON }
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use oddity_core::{EditorWorldExt, headless_app};
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn the_toolbar_is_driven_by_commands() {
+        let mut app = headless_app();
+        app.add_plugins(ViewportPlugin);
+        let world = app.world_mut();
+        world
+            .run_command("viewport.set_tool", json!({ "tool": "rotate" }))
+            .unwrap();
+        world
+            .run_command("viewport.toggle_snap", json!({}))
+            .unwrap();
+        let settings = world.resource::<ViewportSettings>();
+        assert_eq!((settings.tool, settings.snap), (Tool::Rotate, true));
+        assert!(
+            world
+                .run_command("viewport.set_tool", json!({ "tool": "teleport" }))
+                .is_err()
+        );
     }
 }

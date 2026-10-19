@@ -9,12 +9,13 @@ use oddity_project::{Project, VersionMatch};
 pub struct CurrentProject(pub Option<Project>);
 
 impl CurrentProject {
-    /// Load the project from the first command-line argument, if given.
-    pub fn from_args() -> Self {
-        let Some(path) = std::env::args().nth(1).filter(|a| !a.starts_with('-')) else {
+    /// Open the project containing `path`, if one is given. Problems are
+    /// logged and leave no project open.
+    pub fn open(path: Option<&str>) -> Self {
+        let Some(path) = path.filter(|a| !a.starts_with('-')) else {
             return Self(None);
         };
-        match Project::find(&path) {
+        match Project::find(path) {
             Ok(project) => {
                 match project.editor_version_match(oddity_project::EDITOR_VERSION) {
                     VersionMatch::Same => {}

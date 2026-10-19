@@ -1,0 +1,20 @@
+[package]
+name = "oddity_plugin_api"
+description = "The door into the Oddity editor: modes, commands, dock tabs and menu items. Internal and unstable until Phase 6."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[package.metadata.oddity]
+layer = "tooling"
+
+[dependencies]
+bevy = { workspace = true }
+oddity_core = { workspace = true }
+oddity_icons = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,36 +1,65 @@
 <p align="center">
-  <img src="branding/oddity-cat-striped.svg" width="96" alt="Oddity Engine wizard cat">
+  <a href="https://hexodditylabs.dev">
+    <img src="branding/oddity-cat-striped.svg" width="96" alt="Oddity Engine wizard cat">
+  </a>
 </p>
 
-# Oddity Engine
+<h1 align="center">Oddity Engine</h1>
 
-A Godot-style editor for [Bevy](https://bevy.org), written in Rust, by Hex0ddity Labs.
+<p align="center">
+  <a href="https://hexodditylabs.dev"><img src="https://img.shields.io/badge/Oddity-Engine-FF2D55?style=for-the-badge&labelColor=0A0A0A" alt="Oddity Engine"></a>
+  <a href="https://hexodditylabs.dev"><img src="https://img.shields.io/badge/by-Hex0ddity_Labs-FF5A5F?style=for-the-badge&labelColor=0A0A0A" alt="by Hex0ddity Labs"></a>
+</p>
 
-Godot's look, layout and icons on top of Bevy's ECS: Unity-style levels and
-prefabs made of nodes, scripts with `ready` and `update`, and signals, all in
-Rust and all compiled down to plain Bevy. A Unity-Hub-style launcher manages projects and editor
-versions.
+<p align="center">
+  A game engine and editor written in Rust, by <a href="https://hexodditylabs.dev">Hex0ddity Labs</a>.
+</p>
 
-> **Status: Phase 2.** The editor opens in Godot 4.7's layout and look:
-> Hierarchy and FileSystem on the left, the 3D/2D viewport with Godot's
-> toolbar and the bottom panel in the middle, the Inspector on the right. The
-> Hierarchy shows a (demo) level's nodes: select, filter, show/hide, add
-> (`Ctrl+A`) and delete (`Delete`), all undoable and listed in the History
-> dock. The Inspector shows the selected node's components and values. The
-> FileSystem dock shows the open project's files. Editing values,
-> levels/prefabs on disk and the 3D view itself come in Phase 3.
+Levels and prefabs made of nodes, Unity-style scripts in Rust with callbacks
+and signals, and an editor where every action can be undone, scripted or
+driven by an AI agent. A Hub manages your projects and editor versions.
+
+> **Status: Phase 3 has started.** The editor opens with its full layout:
+> Hierarchy, FileSystem and History on the left, the 3D/2D viewport with its
+> toolbar in the middle, the Inspector on the right, and the bottom panel
+> underneath. The Hierarchy shows a demo level's nodes: select, filter,
+> show/hide, add (`Ctrl+A`) and delete (`Delete`), all undoable and listed in
+> History. The Inspector shows the selected node's components and values. The
+> FileSystem dock shows the open project's folders; the Files tab in the bottom
+> panel shows the chosen folder's contents as a grid. Editing values, saving
+> levels and prefabs, and the 3D view itself are being built now.
 
 ## Build and run
 
-You need Rust **1.97.1 or newer** (`rustup update`), because Bevy 0.20 requires it.
+You need Rust **1.97.1 or newer**. Install it with [rustup](https://rustup.rs)
+(`rustup update` if you have it already). Rust from a Linux distribution's
+package manager is usually too old.
 
 ```sh
-cargo editor          # runs the editor with fast dev builds (dynamic linking)
-cargo run -p oddity-editor --release
-cargo test --workspace
+cargo editor                           # run the editor (fast dev builds)
+cargo editor -- samples/shooter        # run it with the sample project open
+cargo editor -- mcp samples/shooter    # no window: an MCP server on stdin/stdout
+cargo run -p oddity-editor --release   # an optimised build
 ```
 
-The first build compiles Bevy and takes several minutes; later builds are quick.
+The first build compiles the whole engine and takes several minutes; later
+builds are quick.
+
+- **Windows:** works out of the box.
+- **Linux:** install the linker and system libraries. On Ubuntu:
+  `sudo apt install clang lld pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev`
+- **macOS:** works out of the box.
+
+### Checks
+
+These must pass before a change goes in; CI runs the same:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo xtask layers                     # the crate layer rules
+```
 
 To save a screenshot of the editor and quit (handy for reviews and CI):
 
@@ -39,33 +68,12 @@ ODDITY_SCREENSHOT=editor.png cargo editor            # macOS / Linux
 $env:ODDITY_SCREENSHOT="editor.png"; cargo editor    # Windows PowerShell
 ```
 
-- **Windows:** works out of the box. `.cargo/config.toml` uses `rust-lld`, which
-  ships with Rust, for faster linking.
-- **Linux:** install `clang`, `lld` and Bevy's
-  [Linux dependencies](https://github.com/bevyengine/bevy/blob/main/docs/linux_dependencies.md)
-  (on Ubuntu: `sudo apt install clang lld pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev`).
-- **macOS:** works out of the box.
+## Projects
 
-## Repository layout
-
-```
-Oddity-engine/
-├── apps/editor/           # oddity-editor: window chrome, docks, layout (see docs/architecture.md)
-├── crates/
-│   ├── oddity_core/       # commands, undo/redo, selection, level root (headless)
-│   ├── oddity_icons/      # Godot icons, @icons, brand marks, UI glyphs: SVG → pixels at any scale
-│   ├── oddity_project/    # oddity.toml: create, load, save, find
-│   └── oddity_widgets/    # theme, fonts, docks, splits, tree view, icon buttons
-├── docs/
-│   ├── architecture.md    # how the pieces fit, and the rules that keep them fitting
-│   └── conventions.md     # code style, comments, tests
-├── branding/              # logo, wordmark, colours (see branding/README.md)
-├── third_party/           # Godot 4.7.2 editor icons, @icons, each with its licence
-└── THIRD_PARTY_NOTICES.md
-```
-
-Crates are added as each phase needs them: `oddity_scene`, `oddity_inspector`,
-`oddity_viewport`, `oddity_mcp`, `oddity_plugin_api`, `oddity_launch` and the Hub.
+A project is a folder with an `oddity.toml`. Open one with
+`cargo editor -- path/to/game`; any folder inside the project works.
+[samples/shooter](samples/shooter/) is the small top-down shooter used to test
+the engine as it grows.
 
 ## Editor shortcuts
 
@@ -84,8 +92,8 @@ Click a step in the History dock to undo or redo back to it.
 
 ## Commands and undo
 
-Every change goes through an `EditorCommand`, so undo/redo works for the UI,
-shortcuts, CLI, MCP and plugins alike:
+Every change goes through an `EditorCommand`, so undo and redo work the same
+for the UI, shortcuts, the CLI, MCP and plugins:
 
 ```rust
 use oddity_core::{EditorWorldExt, commands::{SpawnEntity, RenameEntity}};
@@ -96,77 +104,67 @@ world.execute(spawn)?;
 world.execute(RenameEntity::new(player, "Hero"))?;
 world.undo()?;                                   // Ctrl+Z in the editor
 
-// The same by name, with JSON — what the CLI and MCP use:
+// The same by name, with JSON: what the CLI and MCP use.
 world.run_command("component.set", json!({
     "entity": player.to_bits(), "component": "Transform",
     "path": "translation.x", "value": 3.0,
 }))?;
 ```
 
-Deleting disables entities instead of despawning them, so undo restores the
-very same entities; they are despawned once the step leaves the history.
+Deleting hides entities instead of destroying them, so undo restores the very
+same entities; they are destroyed once the step leaves the history.
 
 ## Levels and prefabs
-
-Oddity uses Unity's model with Unreal-style isolated editing:
 
 | Concept | What it is | How you edit it |
 | --- | --- | --- |
 | **Level** (`.level`) | The world you play: terrain, lights, placed objects | In the main viewport; Play runs the main level |
-| **Prefab** (`.prefab`) | A reusable object: Player, Enemy, Door | Opened in isolation in its own tab, breadcrumb `Level ▸ Enemy` |
-| **Instance** | A prefab placed in a level | Overridden values show in bold; Apply or Revert |
+| **Prefab** (`.prefab`) | A reusable object: Player, Enemy, Door | Opened on its own in a tab, with a breadcrumb `Level ▸ Enemy` |
+| **Instance** | A prefab placed in a level | Changed values show in bold; Apply or Revert |
 
-Both are BSN files underneath. (Arrives in Phase 3.)
+Both are JSON files. (Arriving in Phase 3.)
 
-## Projects
+## Repository layout
 
-A project is a folder with an `oddity.toml` (Oddity's `project.godot`).
-Open one with `cargo editor -- path/to/game`; any folder inside the project works.
-
-## Using the icons
-
-```rust
-use oddity_icons::{Icon, NodeColor, UiIcon};
-
-commands.spawn(UiIcon::new(Icon::godot("Node3D"), 16.0));                         // Godot's icon
-commands.spawn(UiIcon::new(Icon::at("hammer").tinted(NodeColor::Node2D), 16.0));  // @icons, tinted blue
-commands.spawn(UiIcon::new(Icon::oddity_cat(), 64.0));                            // brand
+```
+Oddity-engine/
+├── apps/editor/           # oddity-editor: window chrome, docks, layout
+├── crates/
+│   ├── oddity_core/       # commands, undo/redo, selection, level root (headless)
+│   ├── oddity_icons/      # editor icons and brand marks, rendered sharp at any size
+│   ├── oddity_plugin_api/ # the door into the editor: modes, commands, dock tabs, menus
+│   ├── oddity_project/    # oddity.toml: create, load, save, find
+│   └── oddity_widgets/    # theme, fonts, docks, splits, tree view, file grid, buttons
+├── tools/xtask/           # cargo xtask layers: the crate layer check
+├── samples/shooter/       # the sample game
+├── docs/                  # architecture and conventions
+├── roadmap/               # the roadmap and the design specs
+├── branding/              # logo, wordmark, colours (see branding/README.md)
+├── third_party/           # icon sets, each with its licence
+└── THIRD_PARTY_NOTICES.md
 ```
 
-Icons are embedded as SVG and rendered at the exact pixel size for the
-screen's scale factor, so they stay sharp on high-DPI displays.
-
-## Bevy is the seed
-
-Oddity is built from **Bevy 0.20.0**, pinned exactly (`=0.20.0`). We do not
-track upstream Bevy releases. When Oddity needs to change engine internals,
-Bevy gets forked into this repo (for example `engine/bevy`, as a git subtree)
-and the workspace points at that copy instead of crates.io.
-
-## Theme
-
-`oddity_widgets::ThemeConfig` ports Godot's rule for building its editor theme
-from a base colour, an accent colour and a contrast value, and feeds the
-result into Bevy Feathers' theme tokens. The default is Godot's dark grey with
-the Oddity hot-pink accent; `ThemeConfig::godot()` gives Godot's stock blue.
+Crates are added as each phase needs them. Every crate sits in a layer
+(runtime, tooling, extension, app), and every feature is its own set of
+crates; see [roadmap/modularity.md](roadmap/modularity.md).
 
 ## Roadmap
 
-The full roadmap, with diagrams, is in [roadmap/](roadmap/README.md).
+The full roadmap is in [roadmap/](roadmap/README.md).
 
 | Phase | What | Done when |
 | --- | --- | --- |
-| **0 · Foundations** ✓ | Workspace on Bevy 0.20, fast compiles, CI, icons, theme, fonts | Editor window opens and CI is green |
+| **0 · Foundations** ✓ | Workspace, fast compiles, CI, icons, theme, fonts | The editor window opens and CI is green |
 | **1 · Core** ✓ | Command registry, undo/redo, selection, project file, headless mode | Commands run headless in tests, with undo |
-| **2 · Widgets and shell** ✓ | Godot 4.7 look; docks, splits, tree, filters; Hierarchy, Inspector, History, FileSystem | The layout looks like Godot's |
-| 3 · Editing | Editable inspector, 3D view, gizmos, picking, levels, prefab mode, scripts, play | Make, save, reopen and play a level; edit a prefab in isolation |
-| 4 · CLI, MCP, plugins | Editor CLI, MCP server, `EditorPlugin` API | An agent and a plugin both edit a scene |
-| 5 · Hub | Launch handoff, Hub CLI and UI, version manifest | Hub installs two versions and opens each project |
+| **2 · Widgets and shell** ✓ | The editor's look; docks, splits, tree, filters; Hierarchy, Inspector, History, FileSystem | The full editor layout is in place |
+| 3 · Editing | Viewport, gizmos, levels and prefabs, scripting, Play, physics | Make, save, reopen and play a level; edit a prefab on its own |
+| 4 · Game features | Assets, materials, animation, game UI, saving, export, Steam, 2D, navigation, particles | A small game can be shipped on Steam |
+| 5 · Multiplayer | Host/join, synced nodes and fields, RPCs, QUIC and Steam transports | Two players play a co-op level over Steam |
+| 6 · CLI, MCP, plugins | Editor CLI, MCP server, `EditorPlugin` API | An agent and a plugin both edit a level |
+| 7 · Hub | Launch handoff, Hub CLI and UI, version manifest | The Hub installs two versions and opens each project |
 
 ## Credits
 
-Editor icons from [Godot Engine](https://godotengine.org) (MIT) and
-[@icons](https://github.com/Voxybuns/at-icons) by Voxybuns (MIT). Fonts: Inter,
-Space Grotesk, Geist Mono (SIL OFL). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-Oddity Engine is not affiliated with or endorsed by the Godot Engine project.
+Made by [Hex0ddity Labs](https://hexodditylabs.dev). Third-party icons and
+fonts are listed, with their licences, in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

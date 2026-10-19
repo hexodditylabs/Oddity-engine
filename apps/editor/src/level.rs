@@ -2,12 +2,14 @@
 //!
 //! Levels load from `.level` files in Phase 3. Until then the editor starts
 //! with a small demo level, so the Hierarchy and Inspector work on real
-//! entities and every edit goes through real, undoable commands.
+//! entities and every edit goes through real, undoable commands. Its nodes
+//! carry their node type's name, which picks their icon, but not that
+//! type's components, so nothing in it renders.
 
 use bevy::prelude::*;
-use oddity_core::LevelRoot;
-use oddity_icons::Icon;
+use oddity_core::{LevelRoot, NodeKind};
 
+/// Opens the demo level at startup.
 pub struct LevelPlugin;
 
 impl Plugin for LevelPlugin {
@@ -16,32 +18,19 @@ impl Plugin for LevelPlugin {
     }
 }
 
-/// The icon a node shows in the Hierarchy.
-///
-/// Temporary: in Phase 3 the node-type registry ("Add Node" dialog) gives
-/// each node type its icon, and this component goes away.
-#[derive(Component, Clone, Debug)]
-pub struct NodeIcon(pub Icon);
-
-impl Default for NodeIcon {
-    fn default() -> Self {
-        Self(Icon::godot("Node"))
-    }
-}
-
-/// A plain node for the demo level: a name and a Godot icon.
-fn node(name: &str, icon: &'static str) -> impl Bundle {
-    (Name::new(name.to_owned()), NodeIcon(Icon::godot(icon)))
+/// A plain node for the demo level: a name and its node type.
+fn node(name: &str, kind: &str) -> impl Bundle {
+    (Name::new(name.to_owned()), NodeKind(kind.to_owned()))
 }
 
 /// A node that draws something, so it can be hidden (it gets the eye button).
-fn visual(name: &str, icon: &'static str) -> impl Bundle {
-    (node(name, icon), Visibility::default())
+fn visual(name: &str, kind: &str) -> impl Bundle {
+    (node(name, kind), Visibility::default())
 }
 
 /// A visual node placed in 3D.
-fn spatial(name: &str, icon: &'static str, at: Vec3) -> impl Bundle {
-    (visual(name, icon), Transform::from_translation(at))
+fn spatial(name: &str, kind: &str, at: Vec3) -> impl Bundle {
+    (visual(name, kind), Transform::from_translation(at))
 }
 
 fn spawn_demo_level(mut commands: Commands) {

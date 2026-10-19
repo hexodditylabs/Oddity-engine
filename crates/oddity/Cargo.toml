@@ -1,0 +1,25 @@
+[package]
+name = "oddity"
+description = "Oddity Engine for games: the prelude, scripts and the runtime. The one crate a game depends on."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[package.metadata.oddity]
+layer = "runtime"
+role = "facade"
+
+[dependencies]
+bevy = { workspace = true }
+oddity_level = { workspace = true }
+oddity_project = { workspace = true }
+oddity_script = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

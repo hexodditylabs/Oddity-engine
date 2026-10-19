@@ -1,0 +1,18 @@
+[package]
+name = "oddity_script"
+description = "Oddity Engine's scripting runtime: the Script trait, Ctx, NodeRef and script type data."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[package.metadata.oddity]
+layer = "runtime"
+
+[dependencies]
+bevy = { workspace = true }
+oddity_script_macros = { workspace = true }
+
+[lints]
+workspace = true
